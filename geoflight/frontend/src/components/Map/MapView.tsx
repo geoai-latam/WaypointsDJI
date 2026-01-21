@@ -159,7 +159,6 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
         // 4. Locate (GPS)
         const locateWidget = new Locate({
           view: view,
-          useHeadingEnabled: false,
           goToOverride: (view, options) => {
             options.target.scale = 1500;
             return view.goTo(options.target);
@@ -416,18 +415,6 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
       viewRef.current.goTo(extent, { duration: 500 });
     }
   }, [waypoints]);
-
-  // Clear waypoints function exposed
-  const clearAll = () => {
-    sketchLayerRef.current?.removeAll();
-    waypointLayerRef.current?.removeAll();
-    routeLayerRef.current?.removeAll();
-    labelsLayerRef.current?.removeAll();
-    setHasPolygon(false);
-    setAreaInfo('');
-    onPolygonComplete([]);
-    onAreaCalculated(0);
-  };
 
   return (
     <div className="map-wrapper">
