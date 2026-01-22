@@ -76,6 +76,8 @@ async def calculate_params(request: CalculateRequest):
         side_overlap_pct=request.side_overlap_pct,
         use_48mp=request.use_48mp,
         area_m2=request.area_m2,
+        altitude_override_m=request.altitude_override_m,
+        speed_override_ms=request.speed_override_ms,
     )
 
     return params
@@ -91,49 +93,65 @@ async def generate_waypoints(request: MissionRequest):
             detail="Must provide one of: polygon, corridor, or orbit definition",
         )
 
-    # Calculate flight parameters
+    # Calculate flight parameters (with optional overrides)
     calculator = PhotogrammetryCalculator.for_drone(request.drone_model)
     flight_params = calculator.calculate_flight_params(
         target_gsd_cm=request.target_gsd_cm,
         front_overlap_pct=request.front_overlap_pct,
         side_overlap_pct=request.side_overlap_pct,
         use_48mp=request.use_48mp,
+        altitude_override_m=request.altitude_override_m,
+        speed_override_ms=request.speed_ms,
     )
-
-    # Override speed if specified
-    if request.speed_ms:
-        flight_params.max_speed_ms = min(request.speed_ms, flight_params.max_speed_ms)
 
     warnings = []
     waypoints = []
 
     try:
         if request.pattern == FlightPattern.ORBIT:
-            if not request.orbit:
+            generator = OrbitPatternGenerator(flight_params, request.flight_angle_deg)
+            # Support both explicit orbit definition and polygon-based generation
+            if request.orbit:
+                waypoints = generator.generate(
+                    center=request.orbit.center,
+                    radius_m=request.orbit.radius_m,
+                    num_orbits=request.orbit.num_orbits,
+                    altitude_step_m=request.orbit.altitude_step_m,
+                )
+            elif request.polygon:
+                # Generate orbit from polygon (uses centroid and calculates radius)
+                waypoints = generator.generate(
+                    polygon_coords=request.polygon.coordinates,
+                    num_orbits=3,  # Default orbits at different altitudes
+                    altitude_step_m=10.0,
+                    photos_per_orbit=24,
+                )
+            else:
                 raise HTTPException(
                     status_code=400,
-                    detail="Orbit pattern requires orbit definition",
+                    detail="Orbit pattern requires polygon or orbit definition",
                 )
-            generator = OrbitPatternGenerator(flight_params, request.flight_angle_deg)
-            waypoints = generator.generate(
-                center=request.orbit.center,
-                radius_m=request.orbit.radius_m,
-                num_orbits=request.orbit.num_orbits,
-                altitude_step_m=request.orbit.altitude_step_m,
-            )
 
         elif request.pattern == FlightPattern.CORRIDOR:
-            if not request.corridor:
+            generator = CorridorPatternGenerator(flight_params, request.flight_angle_deg)
+            # Support both explicit corridor definition and polygon-based generation
+            if request.corridor:
+                waypoints = generator.generate(
+                    centerline_coords=request.corridor.centerline,
+                    corridor_width_m=request.corridor.width_m,
+                    num_lines=request.corridor.num_lines,
+                )
+            elif request.polygon:
+                # Generate corridor from polygon (extracts centerline from longest axis)
+                waypoints = generator.generate(
+                    polygon_coords=request.polygon.coordinates,
+                    num_lines=3,  # Default parallel lines
+                )
+            else:
                 raise HTTPException(
                     status_code=400,
-                    detail="Corridor pattern requires corridor definition",
+                    detail="Corridor pattern requires polygon or corridor definition",
                 )
-            generator = CorridorPatternGenerator(flight_params, request.flight_angle_deg)
-            waypoints = generator.generate(
-                centerline_coords=request.corridor.centerline,
-                corridor_width_m=request.corridor.width_m,
-                num_lines=request.corridor.num_lines,
-            )
 
         elif request.pattern == FlightPattern.DOUBLE_GRID:
             if not request.polygon:

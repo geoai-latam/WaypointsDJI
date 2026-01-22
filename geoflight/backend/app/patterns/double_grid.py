@@ -7,12 +7,13 @@ from ..models import Waypoint, FlightParams, Coordinate
 class DoubleGridPatternGenerator(GridPatternGenerator):
     """Generate double grid (crosshatch) pattern for better 3D reconstruction."""
 
-    def generate(self, polygon_coords: list[Coordinate], **kwargs) -> list[Waypoint]:
+    def generate(self, polygon_coords: list[Coordinate], buffer_percent: float = 15, **kwargs) -> list[Waypoint]:
         """
         Generate double grid pattern with two perpendicular passes.
 
         Args:
             polygon_coords: List of polygon vertices in WGS84
+            buffer_percent: Percentage to extend beyond polygon (default 15%)
 
         Returns:
             List of waypoints forming a crosshatch pattern
@@ -21,13 +22,13 @@ class DoubleGridPatternGenerator(GridPatternGenerator):
             return []
 
         # First pass at original angle
-        first_pass = super().generate(polygon_coords)
+        first_pass = super().generate(polygon_coords, buffer_percent=buffer_percent)
 
         # Second pass at perpendicular angle (+90 degrees)
         original_angle = self.flight_angle_deg
         self.flight_angle_deg = (original_angle + 90) % 360
 
-        second_pass = super().generate(polygon_coords)
+        second_pass = super().generate(polygon_coords, buffer_percent=buffer_percent)
 
         # Re-index second pass waypoints
         offset = len(first_pass)

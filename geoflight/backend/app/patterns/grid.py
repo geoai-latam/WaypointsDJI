@@ -12,12 +12,15 @@ from ..models import Waypoint, FlightParams, Coordinate
 class GridPatternGenerator(PatternGenerator):
     """Generate grid (serpentine/lawnmower) pattern for photogrammetry."""
 
-    def generate(self, polygon_coords: list[Coordinate], **kwargs) -> list[Waypoint]:
+    def generate(
+        self, polygon_coords: list[Coordinate], buffer_percent: float = 15, **kwargs
+    ) -> list[Waypoint]:
         """
         Generate grid pattern waypoints.
 
         Args:
             polygon_coords: List of polygon vertices in WGS84
+            buffer_percent: Percentage to extend beyond polygon (default 15%)
 
         Returns:
             List of waypoints forming a serpentine grid pattern
@@ -37,8 +40,12 @@ class GridPatternGenerator(PatternGenerator):
         if not polygon.is_valid:
             polygon = polygon.buffer(0)
 
-        # Generate grid lines
-        lines = self._generate_grid_lines(polygon)
+        # Add buffer to extend flight lines beyond polygon
+        buffer_distance = self.flight_params.line_spacing_m * (buffer_percent / 100) * 3
+        buffered_polygon = polygon.buffer(buffer_distance)
+
+        # Generate grid lines on buffered polygon
+        lines = self._generate_grid_lines(buffered_polygon)
 
         if not lines:
             return []

@@ -129,6 +129,8 @@ class PhotogrammetryCalculator:
         side_overlap_pct: float,
         use_48mp: bool,
         area_m2: Optional[float] = None,
+        altitude_override_m: Optional[float] = None,
+        speed_override_ms: Optional[float] = None,
     ) -> FlightParams:
         """
         Calculate all flight parameters.
@@ -139,17 +141,30 @@ class PhotogrammetryCalculator:
             side_overlap_pct: Side overlap percentage
             use_48mp: Whether using 48MP mode
             area_m2: Optional area for photo estimates
+            altitude_override_m: Optional altitude override (recalculates GSD)
+            speed_override_ms: Optional speed override
 
         Returns:
             FlightParams with all calculated values
         """
-        altitude = self.gsd_to_altitude(target_gsd_cm)
-        actual_gsd = self.altitude_to_gsd(altitude)
+        # If altitude is overridden, use it and recalculate GSD
+        if altitude_override_m is not None:
+            altitude = altitude_override_m
+            actual_gsd = self.altitude_to_gsd(altitude)
+        else:
+            altitude = self.gsd_to_altitude(target_gsd_cm)
+            actual_gsd = self.altitude_to_gsd(altitude)
         footprint_w, footprint_h = self.calculate_footprint(altitude)
         photo_spacing, line_spacing = self.calculate_spacing(
             altitude, front_overlap_pct, side_overlap_pct
         )
-        max_speed = self.calculate_max_speed(photo_spacing, use_48mp)
+        calculated_max_speed = self.calculate_max_speed(photo_spacing, use_48mp)
+
+        # Apply speed override (capped by max allowed for photo interval)
+        if speed_override_ms is not None:
+            effective_speed = min(speed_override_ms, calculated_max_speed)
+        else:
+            effective_speed = calculated_max_speed
 
         # Photo interval
         interval = (
@@ -168,8 +183,8 @@ class PhotogrammetryCalculator:
             num_lines = side_length / line_spacing
             flight_distance = side_length * num_lines * 1.1  # 10% for turns
 
-            # Flight time
-            flight_time = (flight_distance / max_speed) / 60  # minutes
+            # Flight time (use effective speed for estimate)
+            flight_time = (flight_distance / effective_speed) / 60  # minutes
         else:
             estimated_photos = 0
             flight_time = 0
@@ -181,7 +196,7 @@ class PhotogrammetryCalculator:
             footprint_height_m=round(footprint_h, 2),
             line_spacing_m=round(line_spacing, 2),
             photo_spacing_m=round(photo_spacing, 2),
-            max_speed_ms=round(max_speed, 2),
+            max_speed_ms=round(effective_speed, 2),
             photo_interval_s=interval,
             estimated_photos=estimated_photos,
             estimated_flight_time_min=round(flight_time, 1),

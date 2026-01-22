@@ -77,6 +77,7 @@ export interface MissionRequest {
   flight_angle_deg: number;
   use_48mp: boolean;
   speed_ms?: number;
+  altitude_override_m?: number;
   finish_action: FinishAction;
   takeoff_altitude_m: number;
 }
@@ -96,6 +97,8 @@ export interface CalculateRequest {
   side_overlap_pct: number;
   use_48mp: boolean;
   area_m2?: number;
+  altitude_override_m?: number;
+  speed_override_ms?: number;
 }
 
 export interface CameraListResponse {
@@ -111,8 +114,13 @@ export interface MissionConfig {
   sideOverlapPct: number;
   flightAngleDeg: number;
   use48mp: boolean;
-  speedMs?: number;
   finishAction: FinishAction;
+  // Advanced parameters
+  speedMs: number;
+  gimbalPitchDeg: number;
+  altitudeOverrideM?: number;
+  useAltitudeOverride: boolean;
+  useSpeedOverride: boolean;
 }
 
 export const DEFAULT_MISSION_CONFIG: MissionConfig = {
@@ -124,4 +132,9 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   flightAngleDeg: 0,
   use48mp: false,
   finishAction: 'goHome',
+  speedMs: 5.0,
+  gimbalPitchDeg: -90,
+  altitudeOverrideM: 50,
+  useAltitudeOverride: false,
+  useSpeedOverride: false,
 };

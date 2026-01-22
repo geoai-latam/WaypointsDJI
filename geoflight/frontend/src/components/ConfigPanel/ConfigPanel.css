@@ -151,6 +151,33 @@
   font-style: italic;
 }
 
+.advanced-section {
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #e9ecef;
+}
+
+.override-note {
+  font-size: 0.8rem;
+  color: #1976d2;
+  font-weight: 600;
+}
+
+.override-hint {
+  font-size: 0.75rem;
+  color: #666;
+  margin: 4px 0 0;
+  font-style: italic;
+}
+
+.config-section input[type="range"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .flight-params {
   margin-top: 20px;
   padding: 16px;
@@ -192,25 +219,65 @@
   color: #333;
 }
 
-.waypoint-count {
-  margin-top: 16px;
-  padding: 14px;
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+.mission-summary {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
   border-radius: 8px;
-  text-align: center;
-  color: #2e7d32;
-  font-size: 1rem;
+  border-left: 4px solid #1976d2;
 }
 
-.waypoint-count.warning {
-  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
-  color: #e65100;
+.mission-summary h3 {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: #1565c0;
+}
+
+.summary-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: white;
+  border-radius: 6px;
+}
+
+.summary-item.warning {
+  background: #fff3e0;
+  border: 1px solid #ff9800;
+}
+
+.summary-item.highlight {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  border: 2px solid #4caf50;
+}
+
+.summary-label {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.summary-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #333;
+}
+
+.summary-item.highlight .summary-value {
+  color: #2e7d32;
+  font-size: 1.1rem;
 }
 
 .count-warning {
-  display: block;
-  font-size: 0.8rem;
-  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #e65100;
+  margin-left: 6px;
 }
 
 .validation-errors {
@@ -285,6 +352,21 @@
 .btn-success:hover:not(:disabled) {
   background: linear-gradient(135deg, #1e7e34, #155724);
   transform: translateY(-1px);
+}
+
+.btn-link {
+  background: transparent;
+  color: #007aff;
+  padding: 10px 0;
+  font-size: 0.9rem;
+  text-align: left;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.btn-link:hover:not(:disabled) {
+  color: #0056b3;
+  text-decoration: underline;
 }
 
 .hint {

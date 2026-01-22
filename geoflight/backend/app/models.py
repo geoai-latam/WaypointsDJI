@@ -149,6 +149,7 @@ class MissionRequest(BaseModel):
     flight_angle_deg: float = Field(0, ge=0, lt=360, description="Flight direction angle")
     use_48mp: bool = Field(False, description="Use 48MP mode (longer interval)")
     speed_ms: Optional[float] = Field(None, gt=0, le=15, description="Override speed (m/s)")
+    altitude_override_m: Optional[float] = Field(None, ge=20, le=500, description="Override calculated altitude")
 
     # Mission settings
     finish_action: FinishAction = FinishAction.GO_HOME
@@ -164,6 +165,8 @@ class CalculateRequest(BaseModel):
     side_overlap_pct: float = Field(65, ge=50, le=95)
     use_48mp: bool = Field(False)
     area_m2: Optional[float] = Field(None, gt=0, description="Optional area for estimates")
+    altitude_override_m: Optional[float] = Field(None, ge=20, le=500, description="Override calculated altitude")
+    speed_override_ms: Optional[float] = Field(None, gt=0, le=15, description="Override calculated speed")
 
 
 class MissionResponse(BaseModel):

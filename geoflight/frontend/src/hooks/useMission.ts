@@ -87,6 +87,9 @@ export function useMission(): UseMissionReturn {
     if (areaSqM > 0 && areaSqM > 500000) {
       errors.push('Área muy grande (> 50 ha). Considera dividir en varias misiones');
     }
+    if (config.useAltitudeOverride && config.altitudeOverrideM && config.altitudeOverrideM > 120) {
+      errors.push('Altitud mayor a 120m. Verifica regulaciones locales.');
+    }
 
     setValidationErrors(errors);
   }, [config, areaSqM]);
@@ -96,7 +99,18 @@ export function useMission(): UseMissionReturn {
     if (backendStatus === 'online' && areaSqM > 0) {
       calculateParams();
     }
-  }, [config.targetGsdCm, config.frontOverlapPct, config.sideOverlapPct, config.use48mp, areaSqM, backendStatus]);
+  }, [
+    config.targetGsdCm,
+    config.frontOverlapPct,
+    config.sideOverlapPct,
+    config.use48mp,
+    config.useAltitudeOverride,
+    config.altitudeOverrideM,
+    config.useSpeedOverride,
+    config.speedMs,
+    areaSqM,
+    backendStatus,
+  ]);
 
   const updateConfig = useCallback((updates: Partial<MissionConfig>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
@@ -122,6 +136,8 @@ export function useMission(): UseMissionReturn {
         side_overlap_pct: config.sideOverlapPct,
         use_48mp: config.use48mp,
         area_m2: areaSqM > 0 ? areaSqM : undefined,
+        altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
+        speed_override_ms: config.useSpeedOverride ? config.speedMs : undefined,
       });
       setFlightParams(params);
     } catch (err) {
@@ -161,7 +177,8 @@ export function useMission(): UseMissionReturn {
         side_overlap_pct: config.sideOverlapPct,
         flight_angle_deg: config.flightAngleDeg,
         use_48mp: config.use48mp,
-        speed_ms: config.speedMs,
+        speed_ms: config.useSpeedOverride ? config.speedMs : undefined,
+        altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
       };
@@ -227,7 +244,8 @@ export function useMission(): UseMissionReturn {
         side_overlap_pct: config.sideOverlapPct,
         flight_angle_deg: config.flightAngleDeg,
         use_48mp: config.use48mp,
-        speed_ms: config.speedMs,
+        speed_ms: config.useSpeedOverride ? config.speedMs : undefined,
+        altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
       };

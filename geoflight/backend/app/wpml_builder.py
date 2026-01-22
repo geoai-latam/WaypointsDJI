@@ -32,15 +32,10 @@ class WPMLBuilder:
 
         This file contains mission metadata and folder structure.
         """
-        # Register namespaces
-        ET.register_namespace("", self.KML_NAMESPACE)
-        ET.register_namespace("wpml", self.WPML_NAMESPACE)
-
-        # Root element
-        kml = ET.Element("kml", {
-            "xmlns": self.KML_NAMESPACE,
-            "xmlns:wpml": self.WPML_NAMESPACE,
-        })
+        # Root element with namespaces
+        kml = ET.Element("kml")
+        kml.set("xmlns", self.KML_NAMESPACE)
+        kml.set("xmlns:wpml", self.WPML_NAMESPACE)
 
         document = ET.SubElement(kml, "Document")
 
@@ -137,13 +132,10 @@ class WPMLBuilder:
 
         This file contains the executable waypoint data.
         """
-        ET.register_namespace("", self.WPML_NAMESPACE)
-
-        # Root element
-        kml = ET.Element("kml", {
-            "xmlns": self.KML_NAMESPACE,
-            "xmlns:wpml": self.WPML_NAMESPACE,
-        })
+        # Root element with namespaces
+        kml = ET.Element("kml")
+        kml.set("xmlns", self.KML_NAMESPACE)
+        kml.set("xmlns:wpml", self.WPML_NAMESPACE)
 
         document = ET.SubElement(kml, "Document")
 

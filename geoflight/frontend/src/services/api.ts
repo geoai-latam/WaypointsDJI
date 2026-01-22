@@ -13,6 +13,16 @@ const API_BASE = '/api';
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+
+    // Handle Pydantic validation errors (422)
+    if (response.status === 422 && error.detail && Array.isArray(error.detail)) {
+      const messages = error.detail.map((e: { loc?: string[]; msg?: string }) => {
+        const field = e.loc?.slice(1).join('.') || 'unknown';
+        return `${field}: ${e.msg}`;
+      });
+      throw new Error(`Validation error: ${messages.join(', ')}`);
+    }
+
     throw new Error(error.detail || `HTTP error ${response.status}`);
   }
   return response.json();
