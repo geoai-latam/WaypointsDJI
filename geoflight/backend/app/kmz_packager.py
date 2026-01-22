@@ -34,9 +34,12 @@ class KMZPackager:
         Returns:
             KMZ file as bytes
         """
+        # Get gimbal pitch from first waypoint (default -90 for nadir/photogrammetry)
+        gimbal_pitch = self.waypoints[0].gimbal_pitch if self.waypoints else -90
+
         # Generate XML content
         template_kml = self.builder.build_template_kml(finish_action)
-        waylines_wpml = self.builder.build_waylines_wpml()
+        waylines_wpml = self.builder.build_waylines_wpml(gimbal_pitch=gimbal_pitch)
 
         # Create ZIP in memory
         buffer = io.BytesIO()

@@ -1,18 +1,33 @@
-"""WPML XML generator for DJI missions."""
+"""WPML XML generator for DJI missions - Compatible with DJI Fly WPML format."""
 
-import xml.etree.ElementTree as ET
-from xml.dom import minidom
+import time
 from typing import Optional
-import uuid
-from datetime import datetime
+from dataclasses import dataclass
 
-from .models import Waypoint, CameraSpec, FinishAction, DroneModel, CAMERA_PRESETS
+from .models import Waypoint, DroneModel, FinishAction, CAMERA_PRESETS
+
+
+@dataclass
+class GimbalRotateParams:
+    """Parameters for gimbalRotate action."""
+    gimbal_heading_yaw_base: str = "aircraft"
+    gimbal_rotate_mode: str = "absoluteAngle"
+    gimbal_pitch_rotate_enable: int = 1
+    gimbal_pitch_rotate_angle: float = -90  # Default to nadir for photogrammetry
+    gimbal_roll_rotate_enable: int = 0
+    gimbal_roll_rotate_angle: float = 0
+    gimbal_yaw_rotate_enable: int = 0
+    gimbal_yaw_rotate_angle: float = 0
+    gimbal_rotate_time_enable: int = 0
+    gimbal_rotate_time: float = 0
+    payload_position_index: int = 0
 
 
 class WPMLBuilder:
     """Build DJI WPML XML files for waypoint missions."""
 
-    WPML_NAMESPACE = "http://www.dji.com/wpmz/1.0.2"
+    # IMPORTANT: Use the correct namespace for DJI WPML format
+    WPML_NAMESPACE = "http://www.uav.com/wpmz/1.0.2"
     KML_NAMESPACE = "http://www.opengis.net/kml/2.2"
 
     def __init__(
@@ -23,440 +38,263 @@ class WPMLBuilder:
     ):
         self.camera = CAMERA_PRESETS[drone_model]
         self.waypoints = waypoints
-        self.mission_name = mission_name or f"Mission_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.mission_name = mission_name
         self.drone_model = drone_model
+        self.action_id_counter = 1  # Global action ID counter, starts at 1
 
     def build_template_kml(self, finish_action: FinishAction = FinishAction.GO_HOME) -> str:
         """
         Generate template.kml content.
 
-        This file contains mission metadata and folder structure.
+        This file contains only mission metadata and configuration.
+        NOTE: Does NOT include waypoints - those go only in waylines.wpml
         """
-        # Root element with namespaces
-        kml = ET.Element("kml")
-        kml.set("xmlns", self.KML_NAMESPACE)
-        kml.set("xmlns:wpml", self.WPML_NAMESPACE)
+        timestamp = int(time.time() * 1000)
+        speed = self.waypoints[0].speed if self.waypoints else 5.0
 
-        document = ET.SubElement(kml, "Document")
+        return f'''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="{self.KML_NAMESPACE}" xmlns:wpml="{self.WPML_NAMESPACE}">
+  <Document>
+    <wpml:author>GeoFlight Planner</wpml:author>
+    <wpml:createTime>{timestamp}</wpml:createTime>
+    <wpml:updateTime>{timestamp}</wpml:updateTime>
+    <wpml:missionConfig>
+      <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
+      <wpml:finishAction>{finish_action.value}</wpml:finishAction>
+      <wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost>
+      <wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>
+      <wpml:globalTransitionalSpeed>{speed}</wpml:globalTransitionalSpeed>
+      <wpml:droneInfo>
+        <wpml:droneEnumValue>{self.camera.drone_enum_value}</wpml:droneEnumValue>
+        <wpml:droneSubEnumValue>0</wpml:droneSubEnumValue>
+      </wpml:droneInfo>
+    </wpml:missionConfig>
+  </Document>
+</kml>
+'''
 
-        # Mission info
-        ET.SubElement(document, "{%s}author" % self.WPML_NAMESPACE).text = "GeoFlight Planner"
-        ET.SubElement(document, "{%s}createTime" % self.WPML_NAMESPACE).text = str(
-            int(datetime.now().timestamp() * 1000)
-        )
-        ET.SubElement(document, "{%s}updateTime" % self.WPML_NAMESPACE).text = str(
-            int(datetime.now().timestamp() * 1000)
-        )
-
-        # Mission config
-        mission_config = ET.SubElement(document, "{%s}missionConfig" % self.WPML_NAMESPACE)
-        ET.SubElement(mission_config, "{%s}flyToWaylineMode" % self.WPML_NAMESPACE).text = "safely"
-        ET.SubElement(mission_config, "{%s}finishAction" % self.WPML_NAMESPACE).text = finish_action.value
-        ET.SubElement(mission_config, "{%s}exitOnRCLost" % self.WPML_NAMESPACE).text = "executeLostAction"
-        ET.SubElement(mission_config, "{%s}executeRCLostAction" % self.WPML_NAMESPACE).text = "goBack"
-        ET.SubElement(mission_config, "{%s}globalTransitionalSpeed" % self.WPML_NAMESPACE).text = "10"
-
-        # Drone info
-        drone_info = ET.SubElement(mission_config, "{%s}droneInfo" % self.WPML_NAMESPACE)
-        ET.SubElement(drone_info, "{%s}droneEnumValue" % self.WPML_NAMESPACE).text = str(
-            self.camera.drone_enum_value
-        )
-        ET.SubElement(drone_info, "{%s}droneSubEnumValue" % self.WPML_NAMESPACE).text = "0"
-
-        # Payload info
-        payload_info = ET.SubElement(mission_config, "{%s}payloadInfo" % self.WPML_NAMESPACE)
-        ET.SubElement(payload_info, "{%s}payloadEnumValue" % self.WPML_NAMESPACE).text = str(
-            self.camera.payload_enum_value
-        )
-        ET.SubElement(payload_info, "{%s}payloadSubEnumValue" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(payload_info, "{%s}payloadPositionIndex" % self.WPML_NAMESPACE).text = "0"
-
-        # Folder with waylines
-        folder = ET.SubElement(document, "Folder")
-        ET.SubElement(folder, "{%s}templateType" % self.WPML_NAMESPACE).text = "waypoint"
-        ET.SubElement(folder, "{%s}templateId" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(folder, "{%s}autoFlightSpeed" % self.WPML_NAMESPACE).text = str(
-            self.waypoints[0].speed if self.waypoints else 5.0
-        )
-
-        # Wayline coordinate mode
-        ET.SubElement(
-            folder, "{%s}waylineCoordinateSysParam" % self.WPML_NAMESPACE
-        )
-        coord_param = folder.find("{%s}waylineCoordinateSysParam" % self.WPML_NAMESPACE)
-        ET.SubElement(
-            coord_param, "{%s}coordinateMode" % self.WPML_NAMESPACE
-        ).text = "WGS84"
-        ET.SubElement(
-            coord_param, "{%s}heightMode" % self.WPML_NAMESPACE
-        ).text = "relativeToStartPoint"
-
-        # Global waypoint settings
-        ET.SubElement(folder, "{%s}globalWaypointHeadingParam" % self.WPML_NAMESPACE)
-        heading_param = folder.find("{%s}globalWaypointHeadingParam" % self.WPML_NAMESPACE)
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingMode" % self.WPML_NAMESPACE
-        ).text = "followWayline"
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingAngle" % self.WPML_NAMESPACE
-        ).text = "0"
-        ET.SubElement(
-            heading_param, "{%s}waypointPoiPoint" % self.WPML_NAMESPACE
-        ).text = "0.000000,0.000000,0.000000"
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingPathMode" % self.WPML_NAMESPACE
-        ).text = "followBadArc"
-
-        # Global waypoint turn mode
-        ET.SubElement(
-            folder, "{%s}globalWaypointTurnParam" % self.WPML_NAMESPACE
-        )
-        turn_param = folder.find("{%s}globalWaypointTurnParam" % self.WPML_NAMESPACE)
-        ET.SubElement(
-            turn_param, "{%s}waypointTurnMode" % self.WPML_NAMESPACE
-        ).text = "coordinateTurn"
-        ET.SubElement(
-            turn_param, "{%s}waypointTurnDampingDist" % self.WPML_NAMESPACE
-        ).text = "0.2"
-
-        # Add placemarks for each waypoint
-        for wp in self.waypoints:
-            placemark = self._create_template_placemark(wp)
-            folder.append(placemark)
-
-        return self._prettify(kml)
-
-    def build_waylines_wpml(self) -> str:
+    def build_waylines_wpml(self, gimbal_pitch: float = -90) -> str:
         """
         Generate waylines.wpml content.
 
-        This file contains the executable waypoint data.
+        This file contains the executable waypoint data with actions.
+        NOTE: Does NOT include author/createTime/updateTime - only missionConfig and Folder.
+
+        Args:
+            gimbal_pitch: Gimbal pitch angle for photos (-90 = nadir/straight down)
         """
-        # Root element with namespaces
-        kml = ET.Element("kml")
-        kml.set("xmlns", self.KML_NAMESPACE)
-        kml.set("xmlns:wpml", self.WPML_NAMESPACE)
+        if not self.waypoints:
+            raise ValueError("No waypoints provided")
 
-        document = ET.SubElement(kml, "Document")
+        # Reset action ID counter for each generation
+        self.action_id_counter = 1
 
-        # Mission info
-        ET.SubElement(document, "{%s}author" % self.WPML_NAMESPACE).text = "GeoFlight Planner"
-        ET.SubElement(document, "{%s}createTime" % self.WPML_NAMESPACE).text = str(
-            int(datetime.now().timestamp() * 1000)
-        )
-        ET.SubElement(document, "{%s}updateTime" % self.WPML_NAMESPACE).text = str(
-            int(datetime.now().timestamp() * 1000)
-        )
+        speed = self.waypoints[0].speed if self.waypoints else 5.0
 
-        # Mission config (duplicate from template)
-        mission_config = ET.SubElement(document, "{%s}missionConfig" % self.WPML_NAMESPACE)
-        ET.SubElement(mission_config, "{%s}flyToWaylineMode" % self.WPML_NAMESPACE).text = "safely"
-        ET.SubElement(mission_config, "{%s}finishAction" % self.WPML_NAMESPACE).text = "goHome"
-        ET.SubElement(mission_config, "{%s}exitOnRCLost" % self.WPML_NAMESPACE).text = "executeLostAction"
-        ET.SubElement(mission_config, "{%s}executeRCLostAction" % self.WPML_NAMESPACE).text = "goBack"
-        ET.SubElement(mission_config, "{%s}globalTransitionalSpeed" % self.WPML_NAMESPACE).text = "10"
+        # Generate mission config
+        mission_config = self._generate_mission_config()
 
-        drone_info = ET.SubElement(mission_config, "{%s}droneInfo" % self.WPML_NAMESPACE)
-        ET.SubElement(drone_info, "{%s}droneEnumValue" % self.WPML_NAMESPACE).text = str(
-            self.camera.drone_enum_value
-        )
-        ET.SubElement(drone_info, "{%s}droneSubEnumValue" % self.WPML_NAMESPACE).text = "0"
+        # Generate all placemarks
+        placemarks = []
+        for i, wp in enumerate(self.waypoints):
+            is_first = (i == 0)
+            is_last = (i == len(self.waypoints) - 1)
+            placemark = self._generate_placemark(wp, is_first, is_last, gimbal_pitch)
+            placemarks.append(placemark)
 
-        payload_info = ET.SubElement(mission_config, "{%s}payloadInfo" % self.WPML_NAMESPACE)
-        ET.SubElement(payload_info, "{%s}payloadEnumValue" % self.WPML_NAMESPACE).text = str(
-            self.camera.payload_enum_value
-        )
-        ET.SubElement(payload_info, "{%s}payloadSubEnumValue" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(payload_info, "{%s}payloadPositionIndex" % self.WPML_NAMESPACE).text = "0"
+        placemarks_xml = '\n'.join(placemarks)
 
-        # Folder with wayline
-        folder = ET.SubElement(document, "Folder")
-        ET.SubElement(folder, "{%s}templateId" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(folder, "{%s}executeHeightMode" % self.WPML_NAMESPACE).text = "relativeToStartPoint"
-        ET.SubElement(folder, "{%s}waylineId" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(folder, "{%s}distance" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(folder, "{%s}duration" % self.WPML_NAMESPACE).text = "0"
-        ET.SubElement(folder, "{%s}autoFlightSpeed" % self.WPML_NAMESPACE).text = str(
-            self.waypoints[0].speed if self.waypoints else 5.0
-        )
+        return f'''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="{self.KML_NAMESPACE}" xmlns:wpml="{self.WPML_NAMESPACE}">
+  <Document>
+{mission_config}
+    <Folder>
+      <wpml:templateId>0</wpml:templateId>
+      <wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode>
+      <wpml:waylineId>0</wpml:waylineId>
+      <wpml:distance>0</wpml:distance>
+      <wpml:duration>0</wpml:duration>
+      <wpml:autoFlightSpeed>{speed}</wpml:autoFlightSpeed>
+{placemarks_xml}
+    </Folder>
+  </Document>
+</kml>
+'''
 
-        # Add placemarks
-        for wp in self.waypoints:
-            placemark = self._create_wpml_placemark(wp)
-            folder.append(placemark)
+    def _generate_mission_config(self) -> str:
+        """Generate missionConfig block for waylines.wpml."""
+        speed = self.waypoints[0].speed if self.waypoints else 5.0
 
-        return self._prettify(kml)
+        return f'''    <wpml:missionConfig>
+      <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
+      <wpml:finishAction>goHome</wpml:finishAction>
+      <wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost>
+      <wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>
+      <wpml:globalTransitionalSpeed>{speed}</wpml:globalTransitionalSpeed>
+      <wpml:droneInfo>
+        <wpml:droneEnumValue>{self.camera.drone_enum_value}</wpml:droneEnumValue>
+        <wpml:droneSubEnumValue>0</wpml:droneSubEnumValue>
+      </wpml:droneInfo>
+    </wpml:missionConfig>'''
 
-    def _create_template_placemark(self, wp: Waypoint) -> ET.Element:
-        """Create a Placemark element for template.kml."""
-        placemark = ET.Element("Placemark")
+    def _generate_placemark(self, wp: Waypoint, is_first: bool, is_last: bool, gimbal_pitch: float) -> str:
+        """
+        Generate a complete Placemark element for a waypoint.
 
-        # Point geometry
-        point = ET.SubElement(placemark, "Point")
-        ET.SubElement(point, "coordinates").text = f"{wp.longitude},{wp.latitude}"
+        Args:
+            wp: Waypoint data
+            is_first: True if this is the first waypoint
+            is_last: True if this is the last waypoint
+            gimbal_pitch: Gimbal pitch angle for photos
+        """
+        # Determine turn mode and heading enable based on position
+        if is_first or is_last:
+            turn_mode = "toPointAndStopWithContinuityCurvature"
+            heading_angle_enable = 1
+        else:
+            turn_mode = "toPointAndPassWithContinuityCurvature"
+            heading_angle_enable = 0
 
-        # Waypoint index
-        ET.SubElement(placemark, "{%s}index" % self.WPML_NAMESPACE).text = str(wp.index)
+        # Base placemark structure
+        placemark_xml = f'''      <Placemark>
+        <Point>
+          <coordinates>
+            {wp.longitude},{wp.latitude}
+          </coordinates>
+        </Point>
+        <wpml:index>{wp.index}</wpml:index>
+        <wpml:executeHeight>{wp.altitude}</wpml:executeHeight>
+        <wpml:waypointSpeed>{wp.speed}</wpml:waypointSpeed>
+        <wpml:waypointHeadingParam>
+          <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingAngle>{int(wp.heading)}</wpml:waypointHeadingAngle>
+          <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
+          <wpml:waypointHeadingAngleEnable>{heading_angle_enable}</wpml:waypointHeadingAngleEnable>
+          <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
+          <wpml:waypointHeadingPoiIndex>0</wpml:waypointHeadingPoiIndex>
+        </wpml:waypointHeadingParam>
+        <wpml:waypointTurnParam>
+          <wpml:waypointTurnMode>{turn_mode}</wpml:waypointTurnMode>
+          <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
+        </wpml:waypointTurnParam>
+        <wpml:useStraightLine>1</wpml:useStraightLine>'''
 
-        # Execute height (altitude)
-        ET.SubElement(
-            placemark, "{%s}executeHeight" % self.WPML_NAMESPACE
-        ).text = str(wp.altitude)
+        # Add action groups
+        action_groups = []
 
-        # Waypoint speed
-        ET.SubElement(
-            placemark, "{%s}waypointSpeed" % self.WPML_NAMESPACE
-        ).text = str(wp.speed)
+        if is_first and wp.take_photo:
+            # First waypoint: takePhoto + gimbalRotate
+            gimbal_params = GimbalRotateParams(gimbal_pitch_rotate_angle=gimbal_pitch)
+            actions = [
+                self._generate_action_take_photo(),
+                self._generate_action_gimbal_rotate(gimbal_params)
+            ]
+            action_groups.append(self._generate_action_group(1, wp.index, wp.index, actions))
 
-        # Heading parameters
-        heading_param = ET.SubElement(
-            placemark, "{%s}waypointHeadingParam" % self.WPML_NAMESPACE
-        )
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingMode" % self.WPML_NAMESPACE
-        ).text = "smoothTransition"
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingAngle" % self.WPML_NAMESPACE
-        ).text = str(int(wp.heading))
-        ET.SubElement(
-            heading_param, "{%s}waypointPoiPoint" % self.WPML_NAMESPACE
-        ).text = "0.000000,0.000000,0.000000"
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingPathMode" % self.WPML_NAMESPACE
-        ).text = "followBadArc"
+            # Add gimbalEvenlyRotate for transition to next waypoint
+            if len(self.waypoints) > 1:
+                actions2 = [self._generate_action_gimbal_evenly_rotate()]
+                action_groups.append(self._generate_action_group(2, wp.index, wp.index + 1, actions2))
 
-        # Turn parameters
-        turn_param = ET.SubElement(
-            placemark, "{%s}waypointTurnParam" % self.WPML_NAMESPACE
-        )
-        ET.SubElement(
-            turn_param, "{%s}waypointTurnMode" % self.WPML_NAMESPACE
-        ).text = "coordinateTurn"
-        ET.SubElement(
-            turn_param, "{%s}waypointTurnDampingDist" % self.WPML_NAMESPACE
-        ).text = "0.2"
+        elif not is_last and wp.take_photo:
+            # Intermediate waypoints: takePhoto + gimbalEvenlyRotate
+            actions = [self._generate_action_take_photo()]
+            action_groups.append(self._generate_action_group(1, wp.index, wp.index, actions))
 
-        # Gimbal pitch mode
-        ET.SubElement(
-            placemark, "{%s}useStraightLine" % self.WPML_NAMESPACE
-        ).text = "1"
+            if wp.index < len(self.waypoints) - 1:
+                actions2 = [self._generate_action_gimbal_evenly_rotate()]
+                action_groups.append(self._generate_action_group(2, wp.index, wp.index + 1, actions2))
 
-        # Actions
-        if wp.take_photo:
-            action_group = ET.SubElement(
-                placemark, "{%s}actionGroup" % self.WPML_NAMESPACE
-            )
-            ET.SubElement(
-                action_group, "{%s}actionGroupId" % self.WPML_NAMESPACE
-            ).text = str(wp.index)
-            ET.SubElement(
-                action_group, "{%s}actionGroupStartIndex" % self.WPML_NAMESPACE
-            ).text = str(wp.index)
-            ET.SubElement(
-                action_group, "{%s}actionGroupEndIndex" % self.WPML_NAMESPACE
-            ).text = str(wp.index)
-            ET.SubElement(
-                action_group, "{%s}actionGroupMode" % self.WPML_NAMESPACE
-            ).text = "sequence"
-            ET.SubElement(
-                action_group, "{%s}actionTrigger" % self.WPML_NAMESPACE
-            )
-            trigger = action_group.find("{%s}actionTrigger" % self.WPML_NAMESPACE)
-            ET.SubElement(
-                trigger, "{%s}actionTriggerType" % self.WPML_NAMESPACE
-            ).text = "reachPoint"
+        elif is_last and wp.take_photo:
+            # Last waypoint: only takePhoto
+            actions = [self._generate_action_take_photo()]
+            action_groups.append(self._generate_action_group(1, wp.index, wp.index, actions))
 
-            # Gimbal rotate action
-            gimbal_action = ET.SubElement(action_group, "{%s}action" % self.WPML_NAMESPACE)
-            ET.SubElement(
-                gimbal_action, "{%s}actionId" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_action, "{%s}actionActuatorFunc" % self.WPML_NAMESPACE
-            ).text = "gimbalRotate"
-            gimbal_param = ET.SubElement(
-                gimbal_action, "{%s}actionActuatorFuncParam" % self.WPML_NAMESPACE
-            )
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRotateMode" % self.WPML_NAMESPACE
-            ).text = "absoluteAngle"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalPitchRotateEnable" % self.WPML_NAMESPACE
-            ).text = "1"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalPitchRotateAngle" % self.WPML_NAMESPACE
-            ).text = str(int(wp.gimbal_pitch))
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRollRotateEnable" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRollRotateAngle" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalYawRotateEnable" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalYawRotateAngle" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRotateTimeEnable" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRotateTime" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}payloadPositionIndex" % self.WPML_NAMESPACE
-            ).text = "0"
+        # Add action groups to XML
+        if action_groups:
+            placemark_xml += '\n' + '\n'.join(action_groups)
 
-            # Take photo action
-            photo_action = ET.SubElement(action_group, "{%s}action" % self.WPML_NAMESPACE)
-            ET.SubElement(
-                photo_action, "{%s}actionId" % self.WPML_NAMESPACE
-            ).text = "1"
-            ET.SubElement(
-                photo_action, "{%s}actionActuatorFunc" % self.WPML_NAMESPACE
-            ).text = "takePhoto"
-            photo_param = ET.SubElement(
-                photo_action, "{%s}actionActuatorFuncParam" % self.WPML_NAMESPACE
-            )
-            ET.SubElement(
-                photo_param, "{%s}payloadPositionIndex" % self.WPML_NAMESPACE
-            ).text = "0"
+        # Close placemark with gimbal heading param
+        placemark_xml += f'''
+        <wpml:waypointGimbalHeadingParam>
+          <wpml:waypointGimbalPitchAngle>{int(wp.gimbal_pitch)}</wpml:waypointGimbalPitchAngle>
+          <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
+        </wpml:waypointGimbalHeadingParam>
+      </Placemark>'''
 
-        return placemark
+        return placemark_xml
 
-    def _create_wpml_placemark(self, wp: Waypoint) -> ET.Element:
-        """Create a Placemark element for waylines.wpml."""
-        placemark = ET.Element("Placemark")
+    def _generate_action_take_photo(self) -> str:
+        """Generate takePhoto action XML."""
+        action_id = self.action_id_counter
+        self.action_id_counter += 1
+        return f'''          <wpml:action>
+            <wpml:actionId>{action_id}</wpml:actionId>
+            <wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+              <wpml:useGlobalPayloadLensIndex>0</wpml:useGlobalPayloadLensIndex>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>'''
 
-        # Point geometry
-        point = ET.SubElement(placemark, "Point")
-        ET.SubElement(point, "coordinates").text = f"{wp.longitude},{wp.latitude}"
+    def _generate_action_gimbal_rotate(self, params: GimbalRotateParams) -> str:
+        """Generate gimbalRotate action XML."""
+        action_id = self.action_id_counter
+        self.action_id_counter += 1
+        return f'''          <wpml:action>
+            <wpml:actionId>{action_id}</wpml:actionId>
+            <wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:gimbalHeadingYawBase>{params.gimbal_heading_yaw_base}</wpml:gimbalHeadingYawBase>
+              <wpml:gimbalRotateMode>{params.gimbal_rotate_mode}</wpml:gimbalRotateMode>
+              <wpml:gimbalPitchRotateEnable>{params.gimbal_pitch_rotate_enable}</wpml:gimbalPitchRotateEnable>
+              <wpml:gimbalPitchRotateAngle>{params.gimbal_pitch_rotate_angle}</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalRollRotateEnable>{params.gimbal_roll_rotate_enable}</wpml:gimbalRollRotateEnable>
+              <wpml:gimbalRollRotateAngle>{params.gimbal_roll_rotate_angle}</wpml:gimbalRollRotateAngle>
+              <wpml:gimbalYawRotateEnable>{params.gimbal_yaw_rotate_enable}</wpml:gimbalYawRotateEnable>
+              <wpml:gimbalYawRotateAngle>{params.gimbal_yaw_rotate_angle}</wpml:gimbalYawRotateAngle>
+              <wpml:gimbalRotateTimeEnable>{params.gimbal_rotate_time_enable}</wpml:gimbalRotateTimeEnable>
+              <wpml:gimbalRotateTime>{params.gimbal_rotate_time}</wpml:gimbalRotateTime>
+              <wpml:payloadPositionIndex>{params.payload_position_index}</wpml:payloadPositionIndex>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>'''
 
-        # Index
-        ET.SubElement(placemark, "{%s}index" % self.WPML_NAMESPACE).text = str(wp.index)
+    def _generate_action_gimbal_evenly_rotate(self) -> str:
+        """Generate gimbalEvenlyRotate action XML."""
+        action_id = self.action_id_counter
+        self.action_id_counter += 1
+        return f'''          <wpml:action>
+            <wpml:actionId>{action_id}</wpml:actionId>
+            <wpml:actionActuatorFunc>gimbalEvenlyRotate</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:gimbalPitchRotateAngle>0</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
+              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>'''
 
-        # Execute height
-        ET.SubElement(
-            placemark, "{%s}executeHeight" % self.WPML_NAMESPACE
-        ).text = str(wp.altitude)
+    def _generate_action_group(self, group_id: int, start_index: int, end_index: int,
+                               actions: list[str], mode: str = "parallel",
+                               trigger_type: str = "reachPoint") -> str:
+        """
+        Generate an action group XML block.
 
-        # Waypoint speed
-        ET.SubElement(
-            placemark, "{%s}waypointSpeed" % self.WPML_NAMESPACE
-        ).text = str(wp.speed)
-
-        # Heading param
-        heading_param = ET.SubElement(
-            placemark, "{%s}waypointHeadingParam" % self.WPML_NAMESPACE
-        )
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingMode" % self.WPML_NAMESPACE
-        ).text = "smoothTransition"
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingAngle" % self.WPML_NAMESPACE
-        ).text = str(int(wp.heading))
-        ET.SubElement(
-            heading_param, "{%s}waypointHeadingPathMode" % self.WPML_NAMESPACE
-        ).text = "followBadArc"
-
-        # Turn param
-        turn_param = ET.SubElement(
-            placemark, "{%s}waypointTurnParam" % self.WPML_NAMESPACE
-        )
-        ET.SubElement(
-            turn_param, "{%s}waypointTurnMode" % self.WPML_NAMESPACE
-        ).text = "coordinateTurn"
-        ET.SubElement(
-            turn_param, "{%s}waypointTurnDampingDist" % self.WPML_NAMESPACE
-        ).text = "0.2"
-
-        ET.SubElement(
-            placemark, "{%s}useStraightLine" % self.WPML_NAMESPACE
-        ).text = "1"
-
-        # Actions (same structure as template)
-        if wp.take_photo:
-            action_group = ET.SubElement(
-                placemark, "{%s}actionGroup" % self.WPML_NAMESPACE
-            )
-            ET.SubElement(
-                action_group, "{%s}actionGroupId" % self.WPML_NAMESPACE
-            ).text = str(wp.index)
-            ET.SubElement(
-                action_group, "{%s}actionGroupStartIndex" % self.WPML_NAMESPACE
-            ).text = str(wp.index)
-            ET.SubElement(
-                action_group, "{%s}actionGroupEndIndex" % self.WPML_NAMESPACE
-            ).text = str(wp.index)
-            ET.SubElement(
-                action_group, "{%s}actionGroupMode" % self.WPML_NAMESPACE
-            ).text = "sequence"
-            ET.SubElement(
-                action_group, "{%s}actionTrigger" % self.WPML_NAMESPACE
-            )
-            trigger = action_group.find("{%s}actionTrigger" % self.WPML_NAMESPACE)
-            ET.SubElement(
-                trigger, "{%s}actionTriggerType" % self.WPML_NAMESPACE
-            ).text = "reachPoint"
-
-            # Gimbal action
-            gimbal_action = ET.SubElement(action_group, "{%s}action" % self.WPML_NAMESPACE)
-            ET.SubElement(gimbal_action, "{%s}actionId" % self.WPML_NAMESPACE).text = "0"
-            ET.SubElement(
-                gimbal_action, "{%s}actionActuatorFunc" % self.WPML_NAMESPACE
-            ).text = "gimbalRotate"
-            gimbal_param = ET.SubElement(
-                gimbal_action, "{%s}actionActuatorFuncParam" % self.WPML_NAMESPACE
-            )
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRotateMode" % self.WPML_NAMESPACE
-            ).text = "absoluteAngle"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalPitchRotateEnable" % self.WPML_NAMESPACE
-            ).text = "1"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalPitchRotateAngle" % self.WPML_NAMESPACE
-            ).text = str(int(wp.gimbal_pitch))
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRollRotateEnable" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRollRotateAngle" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalYawRotateEnable" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalYawRotateAngle" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRotateTimeEnable" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}gimbalRotateTime" % self.WPML_NAMESPACE
-            ).text = "0"
-            ET.SubElement(
-                gimbal_param, "{%s}payloadPositionIndex" % self.WPML_NAMESPACE
-            ).text = "0"
-
-            # Take photo action
-            photo_action = ET.SubElement(action_group, "{%s}action" % self.WPML_NAMESPACE)
-            ET.SubElement(photo_action, "{%s}actionId" % self.WPML_NAMESPACE).text = "1"
-            ET.SubElement(
-                photo_action, "{%s}actionActuatorFunc" % self.WPML_NAMESPACE
-            ).text = "takePhoto"
-            photo_param = ET.SubElement(
-                photo_action, "{%s}actionActuatorFuncParam" % self.WPML_NAMESPACE
-            )
-            ET.SubElement(
-                photo_param, "{%s}payloadPositionIndex" % self.WPML_NAMESPACE
-            ).text = "0"
-
-        return placemark
-
-    def _prettify(self, elem: ET.Element) -> str:
-        """Return prettified XML string."""
-        rough_string = ET.tostring(elem, encoding="unicode")
-        reparsed = minidom.parseString(rough_string)
-        return reparsed.toprettyxml(indent="  ", encoding=None)
+        Args:
+            group_id: Action group ID (starts at 1)
+            start_index: Waypoint index where group starts
+            end_index: Waypoint index where group ends
+            actions: List of action XML strings
+            mode: "parallel" or "sequence"
+            trigger_type: "reachPoint", "betweenAdjacentPoints", or "multipleTiming"
+        """
+        actions_xml = '\n'.join(actions)
+        return f'''        <wpml:actionGroup>
+          <wpml:actionGroupId>{group_id}</wpml:actionGroupId>
+          <wpml:actionGroupStartIndex>{start_index}</wpml:actionGroupStartIndex>
+          <wpml:actionGroupEndIndex>{end_index}</wpml:actionGroupEndIndex>
+          <wpml:actionGroupMode>{mode}</wpml:actionGroupMode>
+          <wpml:actionTrigger>
+            <wpml:actionTriggerType>{trigger_type}</wpml:actionTriggerType>
+          </wpml:actionTrigger>
+{actions_xml}
+        </wpml:actionGroup>'''

@@ -1,7 +1,6 @@
 """Tests for WPML builder."""
 
 import pytest
-from xml.etree import ElementTree as ET
 from app.wpml_builder import WPMLBuilder
 from app.models import Waypoint, DroneModel
 
@@ -60,13 +59,21 @@ class TestWPMLBuilder:
         assert "droneEnumValue" in kml
         assert "68" in kml  # Mini 4 Pro drone enum
 
-    def test_template_kml_has_waypoints(self):
-        """Test that template.kml contains waypoint placemarks."""
+    def test_template_kml_no_waypoints(self):
+        """Test that template.kml does NOT contain waypoints (per DJI WPML spec)."""
         kml = self.builder.build_template_kml()
 
-        # Should have 3 placemarks
-        assert kml.count("<Placemark>") == 3
-        assert kml.count("</Placemark>") == 3
+        # template.kml should NOT have Placemarks - those go only in waylines.wpml
+        assert "<Placemark>" not in kml
+        assert "</Placemark>" not in kml
+
+    def test_template_kml_correct_namespace(self):
+        """Test that template.kml uses correct WPML namespace."""
+        kml = self.builder.build_template_kml()
+
+        # Must use uav.com namespace, not dji.com
+        assert "http://www.uav.com/wpmz/1.0.2" in kml
+        assert "http://www.dji.com" not in kml
 
     def test_build_waylines_wpml(self):
         """Test waylines.wpml generation."""
@@ -77,6 +84,14 @@ class TestWPMLBuilder:
         assert "wpml" in wpml
         assert "waylineId" in wpml
 
+    def test_waylines_wpml_has_placemarks(self):
+        """Test that waylines.wpml contains waypoint placemarks."""
+        wpml = self.builder.build_waylines_wpml()
+
+        # Should have 3 placemarks
+        assert wpml.count("<Placemark>") == 3
+        assert wpml.count("</Placemark>") == 3
+
     def test_wpml_has_actions(self):
         """Test that WPML contains gimbal and photo actions."""
         wpml = self.builder.build_waylines_wpml()
@@ -85,16 +100,69 @@ class TestWPMLBuilder:
         assert "takePhoto" in wpml
         assert "actionGroup" in wpml
 
-    def test_coordinates_in_output(self):
-        """Test that waypoint coordinates are in the output."""
-        kml = self.builder.build_template_kml()
+    def test_wpml_has_gimbal_evenly_rotate(self):
+        """Test that WPML contains gimbalEvenlyRotate action."""
+        wpml = self.builder.build_waylines_wpml()
 
-        assert "-74.006" in kml
-        assert "40.7128" in kml
+        assert "gimbalEvenlyRotate" in wpml
 
-    def test_altitude_in_output(self):
-        """Test that altitude is correctly set."""
-        kml = self.builder.build_template_kml()
+    def test_coordinates_in_wpml(self):
+        """Test that waypoint coordinates are in waylines.wpml."""
+        wpml = self.builder.build_waylines_wpml()
+
+        assert "-74.006" in wpml
+        assert "40.7128" in wpml
+
+    def test_altitude_in_wpml(self):
+        """Test that altitude is correctly set in waylines.wpml."""
+        wpml = self.builder.build_waylines_wpml()
 
         # executeHeight should be 60
-        assert ">60<" in kml or ">60.0<" in kml
+        assert "<wpml:executeHeight>60</wpml:executeHeight>" in wpml
+
+    def test_first_waypoint_turn_mode(self):
+        """Test that first waypoint has correct turn mode."""
+        wpml = self.builder.build_waylines_wpml()
+
+        # First waypoint should stop
+        assert "toPointAndStopWithContinuityCurvature" in wpml
+
+    def test_intermediate_waypoint_turn_mode(self):
+        """Test that intermediate waypoints have correct turn mode."""
+        wpml = self.builder.build_waylines_wpml()
+
+        # Intermediate waypoints should pass through
+        assert "toPointAndPassWithContinuityCurvature" in wpml
+
+    def test_waypoint_gimbal_heading_param(self):
+        """Test that each placemark has waypointGimbalHeadingParam."""
+        wpml = self.builder.build_waylines_wpml()
+
+        # Should have 3 waypointGimbalHeadingParam (one per waypoint)
+        assert wpml.count("<wpml:waypointGimbalHeadingParam>") == 3
+
+    def test_action_ids_sequential(self):
+        """Test that action IDs are sequential starting from 1."""
+        wpml = self.builder.build_waylines_wpml()
+
+        # Action IDs should start at 1 and be sequential
+        assert "<wpml:actionId>1</wpml:actionId>" in wpml
+        assert "<wpml:actionId>2</wpml:actionId>" in wpml
+
+    def test_waylines_wpml_no_author(self):
+        """Test that waylines.wpml does NOT have author/createTime/updateTime."""
+        wpml = self.builder.build_waylines_wpml()
+
+        # waylines.wpml should not have these fields (per DJI WPML spec)
+        assert "<wpml:author>" not in wpml
+        assert "<wpml:createTime>" not in wpml
+        assert "<wpml:updateTime>" not in wpml
+
+    def test_template_kml_has_author(self):
+        """Test that template.kml HAS author/createTime/updateTime."""
+        kml = self.builder.build_template_kml()
+
+        # template.kml should have these fields
+        assert "<wpml:author>" in kml
+        assert "<wpml:createTime>" in kml
+        assert "<wpml:updateTime>" in kml
