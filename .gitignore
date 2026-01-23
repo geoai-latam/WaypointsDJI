@@ -49,3 +49,17 @@ geoflight/frontend/dist/
 # Generated files
 *.kmz
 *.log
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Documentación de desarrollo/planificación
+DJI_WPML_Estructura_Completa.md
+PLAN_Sistema_Planificacion_Vuelos_Fotogrametricos.md
+PROMPTS_CLAUDE_CODE_POR_FASE.md
+ROADMAP_CLAUDE_CODE_v2.md
+README_DETAILED.md
+
+# Misc
+nul

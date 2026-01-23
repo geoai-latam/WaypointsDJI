@@ -1,88 +1,130 @@
 # GeoFlight Planner
 
-Sistema de planificación de vuelos fotogramétricos para drones DJI Mini 4 Pro y Mini 5 Pro.
+Sistema web de planificación de vuelos fotogramétricos para drones DJI Mini 4 Pro y Mini 5 Pro. Genera archivos KMZ compatibles con DJI Fly.
 
-## Descripción
+---
 
-GeoFlight Planner es una aplicación web full-stack que permite:
+## Objetivo
 
-1. **Dibujar un área** (polígono) en un mapa interactivo con ArcGIS
-2. **Configurar parámetros**: GSD objetivo, overlap, ángulo de vuelo, modelo de dron
-3. **Calcular automáticamente**: altura de vuelo, espaciado entre fotos/líneas, velocidad máxima
-4. **Override manual**: Sobrescribir altitud o velocidad con recálculo automático de parámetros dependientes
-5. **Ver preview de la ruta** con diferentes patrones (Grid, Double Grid, Corredor, Órbita)
-6. **Descargar archivo KMZ** compatible con DJI Fly
+Permitir a usuarios sin conocimiento técnico en fotogrametría planificar misiones de vuelo profesionales:
 
-## Características
+1. Dibujar un área de interés en el mapa
+2. Ajustar parámetros simples (resolución, solapamiento)
+3. Obtener un archivo KMZ listo para volar
 
-- **Mapa interactivo** con ArcGIS JS API 4.34
-- **Widgets incluidos**: Localización GPS, galería de mapas base, barra de escala
-- **Patrones de vuelo** generados desde polígono dibujado
-- **Coherencia de parámetros**: GSD ↔ Altitud bidireccional
-- **Validaciones** en tiempo real con advertencias
-- **Resumen de misión** con tiempo estimado total
+---
 
-## Stack Tecnológico
+## Arquitectura
 
-- **Backend**: Python 3.10+ / FastAPI
-- **Frontend**: React 18 + TypeScript + Vite
-- **Mapas**: ArcGIS JavaScript API 4.34
-- **Geometría**: Shapely / PyProj
+```mermaid
+flowchart LR
+    subgraph Cliente["Frontend - React"]
+        MAP["Mapa ArcGIS"]
+        CONFIG["Panel Config"]
+        HOOK["useMission Hook"]
+    end
+
+    subgraph Servidor["Backend - FastAPI"]
+        API["API REST"]
+        CALC["Calculador"]
+        PATTERNS["Patrones"]
+        KMZ["Generador KMZ"]
+    end
+
+    subgraph Salida["Resultado"]
+        FILE["Archivo .kmz"]
+        DJI["DJI Fly App"]
+        DRONE["Drone"]
+    end
+
+    MAP --> HOOK
+    CONFIG --> HOOK
+    HOOK -->|HTTP| API
+    API --> CALC
+    API --> PATTERNS
+    API --> KMZ
+    KMZ --> FILE
+    FILE --> DJI
+    DJI --> DRONE
+```
+
+---
+
+## Flujo de Uso
+
+```mermaid
+flowchart TD
+    A["Usuario abre la app"] --> B["Dibuja polígono en mapa"]
+    B --> C["Ajusta parámetros"]
+    C --> D{"Genera misión"}
+    D --> E["Ve preview de waypoints"]
+    E --> F["Descarga KMZ"]
+    F --> G["Copia a dispositivo móvil"]
+    G --> H["Importa en DJI Fly"]
+    H --> I["Ejecuta misión"]
+```
+
+---
 
 ## Estructura del Proyecto
 
 ```
 geoflight/
-├── backend/              # FastAPI backend
+├── backend/                 # API Python
 │   ├── app/
-│   │   ├── main.py       # API endpoints
-│   │   ├── models.py     # Pydantic models
-│   │   ├── calculator.py # Cálculos fotogramétricos
-│   │   ├── config.py     # Configuración
-│   │   ├── patterns/     # Generadores de patrones
-│   │   │   ├── base.py       # Clase base con transformaciones UTM
-│   │   │   ├── grid.py       # Patrón serpentín
-│   │   │   ├── double_grid.py # Doble pasada perpendicular
-│   │   │   ├── corridor.py   # Corredor lineal
-│   │   │   └── orbit.py      # Órbita circular
-│   │   ├── wpml_builder.py   # Generador XML WPML
-│   │   └── kmz_packager.py   # Empaquetador KMZ
+│   │   ├── main.py          # Endpoints FastAPI
+│   │   ├── models.py        # Modelos Pydantic
+│   │   ├── calculator.py    # Cálculos fotogramétricos
+│   │   ├── config.py        # Configuración
+│   │   ├── patterns/        # Generadores de patrones
+│   │   │   ├── grid.py      # Patrón serpentín
+│   │   │   ├── double_grid.py
+│   │   │   ├── corridor.py
+│   │   │   └── orbit.py
+│   │   ├── wpml_builder.py  # Genera XML para DJI
+│   │   └── kmz_packager.py  # Empaqueta KMZ
 │   ├── tests/
 │   └── requirements.txt
 │
-├── frontend/             # React frontend
+├── frontend/                # UI React
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Map/          # Mapa ArcGIS con widgets
-│   │   │   └── ConfigPanel/  # Panel de configuración
+│   │   │   ├── Map/         # Mapa interactivo
+│   │   │   └── ConfigPanel/ # Controles
 │   │   ├── hooks/
-│   │   │   └── useMission.ts # Estado central de la misión
+│   │   │   └── useMission.ts
 │   │   ├── services/
-│   │   │   └── api.ts        # Cliente API
+│   │   │   └── api.ts
 │   │   └── types/
-│   │       └── index.ts      # Tipos TypeScript
 │   ├── package.json
 │   └── vite.config.ts
 │
 └── README.md
 ```
 
-## Inicio Rápido
+---
 
-### Backend
+## Despliegue
+
+### Desarrollo Local
+
+**1. Backend**
 
 ```bash
 cd geoflight/backend
 python -m venv venv
-venv\Scripts\activate      # Windows
-source venv/bin/activate   # Linux/Mac
+
+# Windows
+venv\Scripts\activate
+
+# Linux/Mac
+source venv/bin/activate
+
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-El backend estará disponible en `http://localhost:8000`
-
-### Frontend
+**2. Frontend**
 
 ```bash
 cd geoflight/frontend
@@ -90,115 +132,218 @@ npm install
 npm run dev
 ```
 
-El frontend estará disponible en `http://localhost:5173`
+**3. Acceder**
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- Documentación API: http://localhost:8000/docs
+
+### Producción
+
+```mermaid
+flowchart LR
+    NGINX["Nginx / Proxy"] --> STATIC["Frontend Build"]
+    NGINX --> UVICORN["Uvicorn Workers"]
+    UVICORN --> FASTAPI["FastAPI"]
+```
+
+**Build frontend:**
+
+```bash
+cd geoflight/frontend
+npm run build
+# Resultado en dist/
+```
+
+**Ejecutar backend en producción:**
+
+```bash
+cd geoflight/backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+---
 
 ## Patrones de Vuelo
 
-| Patrón | Icono | Descripción | Uso Típico |
-|--------|-------|-------------|------------|
-| Grid | ▤ | Líneas paralelas en serpentín | Ortofotomosaico |
-| Double Grid | ▦ | Dos pasadas perpendiculares | Modelos 3D |
-| Corredor | ═ | Líneas paralelas al eje largo | Carreteras, ríos, líneas eléctricas |
-| Órbita | ◎ | Círculos concéntricos | Torres, edificios, estructuras verticales |
+```mermaid
+flowchart TB
+    subgraph GRID["Grid - Serpentín"]
+        G1["→ → → → →"]
+        G2["← ← ← ← ←"]
+        G3["→ → → → →"]
+        G1 --> G2 --> G3
+    end
 
-### Generación desde Polígono
+    subgraph DGRID["Double Grid"]
+        D1["Pasada 1: →"]
+        D2["Pasada 2: ↓"]
+        D1 --> D2
+    end
 
-Todos los patrones se generan automáticamente desde el polígono dibujado:
+    subgraph CORR["Corridor"]
+        C1["═══════════"]
+        C2["═══════════"]
+        C3["═══════════"]
+    end
 
-- **Grid/Double Grid**: Extiende líneas 15% más allá del polígono para cobertura completa
-- **Corredor**: Extrae la línea central del eje más largo del polígono
-- **Órbita**: Usa el centroide como centro y calcula el radio desde los vértices (+20% margen)
+    subgraph ORB["Orbit"]
+        O1(("◯"))
+    end
+```
 
-## Parámetros de Vuelo
+| Patrón | Uso | Descripción |
+|--------|-----|-------------|
+| **Grid** | Ortofotomosaico, agricultura | Líneas paralelas en zigzag |
+| **Double Grid** | Modelos 3D, reconstrucción | Dos pasadas perpendiculares |
+| **Corridor** | Carreteras, ríos, tuberías | Líneas paralelas al eje largo |
+| **Orbit** | Torres, edificios, monumentos | Círculos concéntricos |
 
-### Parámetros Principales
+---
 
-| Parámetro | Rango | Descripción |
-|-----------|-------|-------------|
-| GSD Objetivo | 0.5 - 5.0 cm/px | Resolución de píxel en terreno |
-| Overlap Frontal | 50% - 90% | Superposición entre fotos consecutivas |
-| Overlap Lateral | 50% - 90% | Superposición entre líneas de vuelo |
-| Ángulo de Vuelo | 0° - 359° | Dirección de las líneas de vuelo |
+## Parámetros
 
-### Parámetros Avanzados
+### Principales
+
+| Parámetro | Rango | Default | Descripción |
+|-----------|-------|---------|-------------|
+| GSD | 0.5-5.0 cm/px | 2.0 | Resolución del terreno |
+| Overlap Frontal | 50-90% | 75% | Solapamiento entre fotos |
+| Overlap Lateral | 50-90% | 65% | Solapamiento entre líneas |
+| Ángulo | 0-359° | 0° | Dirección de vuelo |
+
+### Avanzados
 
 | Parámetro | Descripción |
 |-----------|-------------|
-| Override Altitud | Fija la altitud manualmente (recalcula GSD) |
-| Override Velocidad | Fija la velocidad manualmente |
-| Ángulo Gimbal | Inclinación de la cámara (-90° nadir a 0° horizonte) |
-| Acción Final | RTH, Aterrizar, Hover, o Ir al primer waypoint |
+| Override Altitud | Fija altitud manual, recalcula GSD |
+| Override Velocidad | Fija velocidad manual |
+| Gimbal Pitch | Ángulo cámara (-90° nadir) |
+| Acción Final | RTH, Aterrizar, Hover |
 
-### Coherencia de Parámetros
+### Relación de Parámetros
 
-El sistema mantiene coherencia bidireccional:
+```mermaid
+flowchart LR
+    GSD["GSD cm/px"] -->|calcula| ALT["Altitud m"]
+    ALT -->|calcula| FOOT["Footprint m²"]
+    FOOT --> SPACING["Espaciado fotos"]
+    FOOT --> LINES["Espaciado líneas"]
+    SPACING --> SPEED["Velocidad máx"]
+```
 
-- **Sin override**: GSD → Altitud (calculada automáticamente)
-- **Con override de altitud**: Altitud manual → GSD recalculado
-- **Con override de velocidad**: Velocidad limitada por intervalo de foto
+---
 
-## API Endpoints
+## API Reference
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/cameras` | Lista de drones/cámaras disponibles |
-| POST | `/api/calculate` | Calcula parámetros (soporta overrides) |
-| POST | `/api/generate-waypoints` | Genera waypoints según patrón |
-| POST | `/api/generate-kmz` | Genera y descarga archivo KMZ |
-| GET | `/health` | Health check |
+| GET | `/api/cameras` | Lista drones soportados |
+| POST | `/api/calculate` | Calcula parámetros de vuelo |
+| POST | `/api/generate-waypoints` | Genera waypoints |
+| POST | `/api/generate-kmz` | Descarga archivo KMZ |
+| GET | `/health` | Estado del servidor |
 
-### Ejemplo de Request
+---
 
-```json
-POST /api/generate-waypoints
-{
-  "polygon": {
-    "coordinates": [
-      {"longitude": -74.0721, "latitude": 4.7110},
-      {"longitude": -74.0715, "latitude": 4.7110},
-      {"longitude": -74.0715, "latitude": 4.7105},
-      {"longitude": -74.0721, "latitude": 4.7105}
-    ]
-  },
-  "drone_model": "mini_4_pro",
-  "pattern": "grid",
-  "target_gsd_cm": 2.0,
-  "front_overlap_pct": 75,
-  "side_overlap_pct": 65,
-  "flight_angle_deg": 0,
-  "use_48mp": false,
-  "altitude_override_m": null,
-  "speed_ms": null,
-  "finish_action": "goHome"
-}
+## Cómo Modificar
+
+### Agregar un Nuevo Drone
+
+1. **Backend** - Editar `backend/app/models.py`:
+
+```python
+# En CAMERA_PRESETS agregar:
+"nuevo_drone": CameraSpec(
+    name="DJI Nuevo Drone",
+    sensor_width_mm=9.59,
+    sensor_height_mm=7.19,
+    focal_length_mm=6.72,
+    image_width_px=8064,
+    image_height_px=6048,
+    drone_enum_value=XX,      # Valor DJI
+    payload_enum_value=XX,    # Valor DJI
+)
+
+# En DroneModel enum agregar:
+class DroneModel(str, Enum):
+    NUEVO_DRONE = "nuevo_drone"
 ```
+
+2. **Frontend** - Editar `frontend/src/types/index.ts`:
+
+```typescript
+export type DroneModel = 'mini_4_pro' | 'mini_5_pro' | 'nuevo_drone';
+```
+
+### Agregar un Nuevo Patrón de Vuelo
+
+1. Crear archivo en `backend/app/patterns/nuevo_patron.py`
+2. Heredar de `PatternGenerator` (base.py)
+3. Implementar método `generate()`
+4. Registrar en `main.py`
+5. Agregar al enum `FlightPattern` en models.py
+6. Agregar botón en `ConfigPanel.tsx`
+
+### Modificar Cálculos Fotogramétricos
+
+Archivo: `backend/app/calculator.py`
+
+```python
+class PhotogrammetryCalculator:
+    def gsd_to_altitude(self, gsd_cm):
+        # Fórmula: altitude = (GSD × focal × img_width) / (sensor_width × 100)
+
+    def calculate_footprint(self, altitude_m):
+        # Área que cubre una foto a esa altitud
+
+    def calculate_spacing(self, altitude_m, front_overlap, side_overlap):
+        # Distancia entre fotos y entre líneas
+```
+
+### Modificar UI del Mapa
+
+Archivo: `frontend/src/components/Map/MapView.tsx`
+
+- Widgets ArcGIS: Sketch, Home, Locate, BasemapGallery, ScaleBar
+- Capas gráficas: sketch, route, waypoints, labels
+
+### Modificar Panel de Configuración
+
+Archivo: `frontend/src/components/ConfigPanel/ConfigPanel.tsx`
+
+- Sliders, toggles, selectores
+- Validaciones en `useMission.ts`
+
+---
 
 ## Formato KMZ
 
-El archivo KMZ generado es compatible con DJI Fly y contiene:
-
 ```
-mission.kmz
+mission.kmz (ZIP)
 └── wpmz/
-    ├── template.kml   # Metadatos de la misión
-    └── waylines.wpml  # Waypoints ejecutables
+    ├── template.kml    # Metadatos misión
+    └── waylines.wpml   # Waypoints ejecutables
 ```
 
-### Instalación en el Drone
+### Instalar en Drone
 
-1. Descarga el archivo `.kmz`
-2. Conecta el dispositivo móvil al computador
-3. Copia el archivo a:
-   ```
-   /Android/data/dji.go.v5/files/waypoint/
-   ```
-4. Abre DJI Fly → Waypoint → Importar
+1. Descargar archivo `.kmz`
+2. Copiar a: `/Android/data/dji.go.v5/files/waypoint/`
+3. DJI Fly → Waypoint → Importar
 
-## Limitaciones DJI Fly
+---
 
-- **Máximo ~99 waypoints** por misión
-- **Intervalo mínimo de fotos**: 2s (12MP), 5s (48MP)
-- **Altitud máxima recomendada**: 120m (regulaciones locales)
+## Limitaciones
+
+| Restricción | Valor | Nota |
+|-------------|-------|------|
+| Max waypoints | 99 | Límite DJI Fly |
+| Intervalo 12MP | 2s | Fijo |
+| Intervalo 48MP | 5s | Fijo |
+| Altitud recomendada | ≤120m | Regulaciones |
+
+---
 
 ## Drones Soportados
 
@@ -207,24 +352,29 @@ mission.kmz
 | DJI Mini 4 Pro | 68 | 52 |
 | DJI Mini 5 Pro | 91 | 80 |
 
-## Desarrollo
+---
 
-### Tests Backend
+## Tests
 
 ```bash
+# Backend
 cd geoflight/backend
-pytest                     # Todos los tests
-pytest tests/test_api.py   # Tests de API
-pytest -k "test_calculate" # Tests específicos
-```
+pytest
 
-### Build Frontend
-
-```bash
+# Frontend lint
 cd geoflight/frontend
-npm run build    # Build de producción
-npm run lint     # ESLint
+npm run lint
 ```
+
+---
+
+## Stack Tecnológico
+
+- **Backend**: Python 3.10+, FastAPI, Shapely, PyProj
+- **Frontend**: React 18, TypeScript, Vite, ArcGIS JS 4.34
+- **Formato salida**: DJI WPML/KMZ
+
+---
 
 ## Licencia
 
