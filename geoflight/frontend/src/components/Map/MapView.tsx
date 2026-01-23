@@ -31,8 +31,8 @@ interface MapComponentProps {
 const BOGOTA_CENTER = [-74.0721, 4.7110];
 
 const POLYGON_SYMBOL = new SimpleFillSymbol({
-  color: [249, 115, 22, 0.2],
-  outline: { color: [249, 115, 22, 1], width: 2 },
+  color: [59, 130, 246, 0.2],
+  outline: { color: [59, 130, 246, 1], width: 2 },
 });
 
 const ROUTE_SYMBOL = new SimpleLineSymbol({
@@ -126,6 +126,10 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
           settingsMenu: false,
           undoRedoMenu: false,
         },
+        defaultCreateOptions: {
+          hasZ: false,
+        },
+        polygonSymbol: POLYGON_SYMBOL,
       });
       view.ui.add(sketch, 'top-right');
 
