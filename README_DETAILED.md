@@ -164,11 +164,11 @@ flowchart LR
         E5["GET /health"]
     end
 
-    E1 -->|"Lista drones"| R1[CameraListResponse]
-    E2 -->|"Solo cálculos"| R2[FlightParams]
-    E3 -->|"Waypoints"| R3[MissionResponse]
-    E4 -->|"Archivo"| R4[Binary KMZ]
-    E5 -->|"Estado"| R5[{"status": "healthy"}]
+    E1 -->|Lista drones| R1[CameraListResponse]
+    E2 -->|Solo cálculos| R2[FlightParams]
+    E3 -->|Waypoints| R3[MissionResponse]
+    E4 -->|Archivo| R4[Binary KMZ]
+    E5 -->|Estado| R5["status: healthy"]
 ```
 
 | Endpoint | Método | Descripción | Request | Response |
