@@ -756,14 +756,14 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TB
-    subgraph State["Estado Central (useMission)"]
-        CONFIG[config: MissionConfig]
-        PARAMS[flightParams: FlightParams]
-        WP[waypoints: Waypoint[]]
-        POLY[polygonCoords: Coordinate[]]
-        AREA[areaSqM: number]
-        STATUS[backendStatus]
-        ERRORS[validationErrors]
+    subgraph State["Estado Central - useMission"]
+        CONFIG["config: MissionConfig"]
+        PARAMS["flightParams: FlightParams"]
+        WP["waypoints: Waypoint array"]
+        POLY["polygonCoords: Coordinate array"]
+        AREA["areaSqM: number"]
+        STATUS["backendStatus"]
+        ERRORS["validationErrors"]
     end
 
     subgraph Effects["Effects Automáticos"]
@@ -773,9 +773,9 @@ flowchart TB
     end
 
     subgraph Actions["Acciones Usuario"]
-        A1[updateConfig]
-        A2[generateMission]
-        A3[downloadKmz]
+        A1["updateConfig"]
+        A2["generateMission"]
+        A3["downloadKmz"]
     end
 
     E1 -->|mount| STATUS
@@ -788,7 +788,7 @@ flowchart TB
     A2 -->|genera| WP
     A2 -->|actualiza| PARAMS
 
-    A3 -->|descarga| KMZ[Archivo KMZ]
+    A3 -->|descarga| KMZ["Archivo KMZ"]
 ```
 
 ---
