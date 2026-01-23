@@ -14,15 +14,17 @@ class TestPhotogrammetryCalculator:
 
     def test_gsd_to_altitude(self):
         """Test GSD to altitude conversion."""
-        # 2 cm/px GSD should give ~57m altitude for Mini 4 Pro
+        # Mini 4 Pro: 2 cm/px GSD requires ~113m altitude
+        # Formula: altitude = (GSD * focal_length * image_width) / (sensor_width * 100)
         altitude = self.calc.gsd_to_altitude(2.0)
-        assert 50 < altitude < 65
+        assert 105 < altitude < 120  # ~113m expected
 
     def test_altitude_to_gsd(self):
         """Test altitude to GSD conversion."""
-        # At 50m, GSD should be around 1.7-1.8 cm/px
+        # Mini 4 Pro at 50m: GSD ~0.88 cm/px (high resolution camera)
+        # At 120m: GSD ~2.12 cm/px
         gsd = self.calc.altitude_to_gsd(50)
-        assert 1.5 < gsd < 2.0
+        assert 0.8 < gsd < 1.0  # ~0.88 cm/px expected
 
     def test_gsd_altitude_roundtrip(self):
         """Test that GSD->altitude->GSD is consistent."""

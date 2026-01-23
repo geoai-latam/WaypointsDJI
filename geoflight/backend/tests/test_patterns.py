@@ -39,7 +39,23 @@ class TestGridPatternGenerator:
 
         assert len(waypoints) > 0
         assert all(wp.altitude == self.params.altitude_m for wp in waypoints)
-        assert all(wp.gimbal_pitch == -90 for wp in waypoints)
+        assert all(wp.gimbal_pitch == -90 for wp in waypoints)  # Default gimbal pitch
+
+    def test_generate_with_custom_gimbal_pitch(self):
+        """Test waypoint generation with custom gimbal pitch."""
+        generator = GridPatternGenerator(self.params, flight_angle_deg=0, gimbal_pitch_deg=-45)
+
+        polygon = [
+            Coordinate(longitude=-74.0060, latitude=40.7128),
+            Coordinate(longitude=-74.0050, latitude=40.7128),
+            Coordinate(longitude=-74.0050, latitude=40.7138),
+            Coordinate(longitude=-74.0060, latitude=40.7138),
+        ]
+
+        waypoints = generator.generate(polygon)
+
+        assert len(waypoints) > 0
+        assert all(wp.gimbal_pitch == -45 for wp in waypoints)
 
     def test_generate_with_angle(self):
         """Test waypoint generation with flight angle."""

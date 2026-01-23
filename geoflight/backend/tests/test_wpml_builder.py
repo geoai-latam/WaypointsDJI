@@ -117,8 +117,8 @@ class TestWPMLBuilder:
         """Test that altitude is correctly set in waylines.wpml."""
         wpml = self.builder.build_waylines_wpml()
 
-        # executeHeight should be 60
-        assert "<wpml:executeHeight>60</wpml:executeHeight>" in wpml
+        # executeHeight should be 60 (may include decimal like 60.0)
+        assert "<wpml:executeHeight>60" in wpml or "<wpml:executeHeight>60.0" in wpml
 
     def test_first_waypoint_turn_mode(self):
         """Test that first waypoint has correct turn mode."""

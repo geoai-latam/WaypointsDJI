@@ -18,7 +18,7 @@ class OrbitPatternGenerator(PatternGenerator):
         num_orbits: int = 1,
         altitude_step_m: float = 10.0,
         photos_per_orbit: int = 24,
-        start_gimbal_pitch: float = -45,
+        start_gimbal_pitch: float = None,
         **kwargs,
     ) -> list[Waypoint]:
         """
@@ -35,23 +35,26 @@ class OrbitPatternGenerator(PatternGenerator):
             num_orbits: Number of concentric orbits at different altitudes
             altitude_step_m: Altitude increase between orbits
             photos_per_orbit: Number of photos per orbit
-            start_gimbal_pitch: Starting gimbal pitch angle
+            start_gimbal_pitch: Starting gimbal pitch angle (uses instance value if None)
 
         Returns:
             List of waypoints forming concentric orbits
         """
+        # Use instance gimbal_pitch if not explicitly provided
+        gimbal_pitch = start_gimbal_pitch if start_gimbal_pitch is not None else self.gimbal_pitch_deg
+
         # If polygon provided, calculate center and radius from it
         if polygon_coords and len(polygon_coords) >= 3:
             return self._generate_from_polygon(
                 polygon_coords, num_orbits, altitude_step_m,
-                photos_per_orbit, start_gimbal_pitch
+                photos_per_orbit, gimbal_pitch
             )
 
         # Otherwise use explicit center and radius
         if center and radius_m:
             return self._generate_from_center(
                 center, radius_m, num_orbits, altitude_step_m,
-                photos_per_orbit, start_gimbal_pitch
+                photos_per_orbit, gimbal_pitch
             )
 
         return []

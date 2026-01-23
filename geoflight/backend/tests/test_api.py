@@ -127,6 +127,38 @@ class TestGenerateWaypointsEndpoint:
         )
         assert response.status_code == 400
 
+    def test_generate_with_custom_gimbal_pitch(self, client):
+        """Test waypoint generation with custom gimbal pitch."""
+        response = client.post(
+            "/api/generate-waypoints",
+            json={
+                "polygon": {
+                    "coordinates": [
+                        {"longitude": -74.006, "latitude": 40.7128},
+                        {"longitude": -74.005, "latitude": 40.7128},
+                        {"longitude": -74.005, "latitude": 40.7138},
+                        {"longitude": -74.006, "latitude": 40.7138},
+                    ]
+                },
+                "drone_model": "mini_4_pro",
+                "pattern": "grid",
+                "target_gsd_cm": 2.0,
+                "front_overlap_pct": 75,
+                "side_overlap_pct": 65,
+                "flight_angle_deg": 0,
+                "use_48mp": False,
+                "gimbal_pitch_deg": -45,
+                "finish_action": "goHome",
+                "takeoff_altitude_m": 30,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        # Verify all waypoints have the custom gimbal pitch
+        for wp in data["waypoints"]:
+            assert wp["gimbal_pitch"] == -45
+
 
 class TestGenerateKMZEndpoint:
     """Tests for KMZ generation endpoint."""

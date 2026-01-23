@@ -78,6 +78,7 @@ export interface MissionRequest {
   use_48mp: boolean;
   speed_ms?: number;
   altitude_override_m?: number;
+  gimbal_pitch_deg: number;
   finish_action: FinishAction;
   takeoff_altitude_m: number;
 }

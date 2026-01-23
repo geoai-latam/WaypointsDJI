@@ -179,6 +179,7 @@ export function useMission(): UseMissionReturn {
         use_48mp: config.use48mp,
         speed_ms: config.useSpeedOverride ? config.speedMs : undefined,
         altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
+        gimbal_pitch_deg: config.gimbalPitchDeg,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
       };
@@ -246,6 +247,7 @@ export function useMission(): UseMissionReturn {
         use_48mp: config.use48mp,
         speed_ms: config.useSpeedOverride ? config.speedMs : undefined,
         altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
+        gimbal_pitch_deg: config.gimbalPitchDeg,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
       };

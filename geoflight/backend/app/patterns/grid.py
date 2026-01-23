@@ -160,7 +160,6 @@ class GridPatternGenerator(PatternGenerator):
                         lon=lon,
                         lat=lat,
                         heading=heading,
-                        gimbal_pitch=-90,  # Nadir
                         take_photo=True,
                     )
                 )

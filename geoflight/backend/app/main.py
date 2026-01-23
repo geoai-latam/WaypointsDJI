@@ -109,7 +109,7 @@ async def generate_waypoints(request: MissionRequest):
 
     try:
         if request.pattern == FlightPattern.ORBIT:
-            generator = OrbitPatternGenerator(flight_params, request.flight_angle_deg)
+            generator = OrbitPatternGenerator(flight_params, request.flight_angle_deg, request.gimbal_pitch_deg)
             # Support both explicit orbit definition and polygon-based generation
             if request.orbit:
                 waypoints = generator.generate(
@@ -133,7 +133,7 @@ async def generate_waypoints(request: MissionRequest):
                 )
 
         elif request.pattern == FlightPattern.CORRIDOR:
-            generator = CorridorPatternGenerator(flight_params, request.flight_angle_deg)
+            generator = CorridorPatternGenerator(flight_params, request.flight_angle_deg, request.gimbal_pitch_deg)
             # Support both explicit corridor definition and polygon-based generation
             if request.corridor:
                 waypoints = generator.generate(
@@ -159,7 +159,7 @@ async def generate_waypoints(request: MissionRequest):
                     status_code=400,
                     detail="Double grid pattern requires polygon definition",
                 )
-            generator = DoubleGridPatternGenerator(flight_params, request.flight_angle_deg)
+            generator = DoubleGridPatternGenerator(flight_params, request.flight_angle_deg, request.gimbal_pitch_deg)
             waypoints = generator.generate(polygon_coords=request.polygon.coordinates)
 
         else:  # GRID
@@ -168,7 +168,7 @@ async def generate_waypoints(request: MissionRequest):
                     status_code=400,
                     detail="Grid pattern requires polygon definition",
                 )
-            generator = GridPatternGenerator(flight_params, request.flight_angle_deg)
+            generator = GridPatternGenerator(flight_params, request.flight_angle_deg, request.gimbal_pitch_deg)
             waypoints = generator.generate(polygon_coords=request.polygon.coordinates)
 
         # Check waypoint limit

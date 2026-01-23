@@ -150,6 +150,7 @@ class MissionRequest(BaseModel):
     use_48mp: bool = Field(False, description="Use 48MP mode (longer interval)")
     speed_ms: Optional[float] = Field(None, gt=0, le=15, description="Override speed (m/s)")
     altitude_override_m: Optional[float] = Field(None, ge=20, le=500, description="Override calculated altitude")
+    gimbal_pitch_deg: float = Field(-90, ge=-90, le=0, description="Gimbal pitch angle (-90=nadir, 0=horizon)")
 
     # Mission settings
     finish_action: FinishAction = FinishAction.GO_HOME

@@ -19,9 +19,10 @@ class PatternGenerator(ABC):
     _to_wgs84: Optional[Transformer] = None
     _utm_zone: Optional[int] = None
 
-    def __init__(self, flight_params: FlightParams, flight_angle_deg: float = 0):
+    def __init__(self, flight_params: FlightParams, flight_angle_deg: float = 0, gimbal_pitch_deg: float = -90):
         self.flight_params = flight_params
         self.flight_angle_deg = flight_angle_deg
+        self.gimbal_pitch_deg = gimbal_pitch_deg
 
     def _get_utm_zone(self, lon: float) -> int:
         """Get UTM zone for a longitude."""
@@ -73,17 +74,19 @@ class PatternGenerator(ABC):
         lon: float,
         lat: float,
         heading: float = 0,
-        gimbal_pitch: float = -90,
+        gimbal_pitch: Optional[float] = None,
         take_photo: bool = True,
     ) -> Waypoint:
         """Create a waypoint with standard parameters."""
+        # Use instance gimbal_pitch if not explicitly provided
+        pitch = gimbal_pitch if gimbal_pitch is not None else self.gimbal_pitch_deg
         return Waypoint(
             index=index,
             longitude=lon,
             latitude=lat,
             altitude=self.flight_params.altitude_m,
             heading=heading,
-            gimbal_pitch=gimbal_pitch,
+            gimbal_pitch=pitch,
             speed=self.flight_params.max_speed_ms,
             take_photo=take_photo,
         )

@@ -229,7 +229,6 @@ class CorridorPatternGenerator(PatternGenerator):
                         lon=lon,
                         lat=lat,
                         heading=heading,
-                        gimbal_pitch=-90,
                         take_photo=True,
                     )
                 )
