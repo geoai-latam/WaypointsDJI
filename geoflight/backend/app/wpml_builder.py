@@ -115,6 +115,7 @@ class WPMLBuilder:
       <wpml:distance>0</wpml:distance>
       <wpml:duration>0</wpml:duration>
       <wpml:autoFlightSpeed>{speed}</wpml:autoFlightSpeed>
+      <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
 {placemarks_xml}
     </Folder>
   </Document>
