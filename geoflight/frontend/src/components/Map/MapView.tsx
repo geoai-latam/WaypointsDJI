@@ -31,12 +31,12 @@ interface MapComponentProps {
 const BOGOTA_CENTER = [-74.0721, 4.7110];
 
 const POLYGON_SYMBOL = new SimpleFillSymbol({
-  color: [0, 122, 255, 0.2],
-  outline: { color: [0, 122, 255, 1], width: 2 },
+  color: [249, 115, 22, 0.2],
+  outline: { color: [249, 115, 22, 1], width: 2 },
 });
 
 const ROUTE_SYMBOL = new SimpleLineSymbol({
-  color: [255, 165, 0, 0.9],
+  color: [249, 115, 22, 0.9],
   width: 2,
   style: 'solid',
 });
@@ -67,7 +67,7 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
     const rings = wgs84Polygon.rings[0];
     const areaSqM = Math.abs(geometryEngine.geodesicArea(polygon, 'square-meters'));
 
-    setAreaInfo(`Área: ${formatArea(areaSqM)}`);
+    setAreaInfo(`Area: ${formatArea(areaSqM)}`);
     callbacksRef.current.onAreaCalculated(areaSqM);
 
     const coords: Coordinate[] = rings.map((ring) => ({
@@ -120,10 +120,11 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
         layer: sketchLayer,
         view,
         creationMode: 'single',
+        availableCreateTools: ['polygon', 'rectangle'],
         visibleElements: {
-          createTools: { point: false, polyline: false, polygon: true, rectangle: true, circle: false },
           selectionTools: { 'lasso-selection': false, 'rectangle-selection': false },
           settingsMenu: false,
+          undoRedoMenu: false,
         },
       });
       view.ui.add(sketch, 'top-right');
@@ -209,7 +210,7 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
     waypoints.forEach((wp, index) => {
       const isFirst = index === 0;
       const isLast = index === waypoints.length - 1;
-      const color = isFirst ? [0, 200, 0] : isLast ? [255, 0, 0] : [255, 255, 255];
+      const color = isFirst ? [34, 197, 94] : isLast ? [239, 68, 68] : [255, 255, 255];
 
       markers.push(new Graphic({
         geometry: new Point({ longitude: wp.longitude, latitude: wp.latitude, spatialReference: { wkid: 4326 } }),
@@ -217,7 +218,7 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
           color,
           size: isFirst || isLast ? 10 : 4,
           style: 'circle',
-          outline: { color: isFirst ? [0, 150, 0] : isLast ? [180, 0, 0] : [80, 80, 80], width: 1 },
+          outline: { color: isFirst ? [22, 163, 74] : isLast ? [220, 38, 38] : [80, 80, 80], width: 1 },
         }),
       }));
 
@@ -227,7 +228,7 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
           symbol: new TextSymbol({
             text: isFirst ? 'INICIO' : 'FIN',
             color: 'white',
-            haloColor: isFirst ? 'green' : 'red',
+            haloColor: isFirst ? '#16a34a' : '#dc2626',
             haloSize: 2,
             font: { size: 10, weight: 'bold' },
             yoffset: 15,
@@ -274,8 +275,8 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
           <div className="instructions-content">
             <h3>Dibuja el Area de Vuelo</h3>
             <ol>
-              <li>Usa <strong>Polygon</strong> o <strong>Rectangle</strong> del panel derecho</li>
-              <li>Clic para crear vertices, doble clic para terminar</li>
+              <li>Usa <strong>Polygon</strong> o <strong>Rectangle</strong> del panel</li>
+              <li>Clic para vertices, doble clic para terminar</li>
             </ol>
           </div>
         </div>

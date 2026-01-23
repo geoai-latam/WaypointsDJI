@@ -44,14 +44,7 @@ function App() {
       <header className="app-header">
         <div className="header-title">
           <h1>GeoFlight Planner</h1>
-          <span className="subtitle">Planificación de Vuelos Fotogramétricos para DJI</span>
-        </div>
-        <div className="header-status">
-          <span className={`status-badge ${backendStatus}`}>
-            {backendStatus === 'checking' && '⏳ Conectando...'}
-            {backendStatus === 'online' && '🟢 Servidor Conectado'}
-            {backendStatus === 'offline' && '🔴 Servidor Desconectado'}
-          </span>
+          <span className="subtitle">Planificación de Vuelos Fotogramétricos</span>
         </div>
       </header>
 
@@ -89,12 +82,6 @@ function App() {
         </div>
       )}
 
-      {backendStatus === 'offline' && (
-        <div className="offline-banner">
-          <span>⚠️ No se puede conectar al servidor. Asegúrate de que el backend esté corriendo en http://localhost:8000</span>
-          <code>cd backend && uvicorn app.main:app --reload</code>
-        </div>
-      )}
     </div>
   );
 }
