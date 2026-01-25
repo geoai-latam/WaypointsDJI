@@ -23,27 +23,27 @@ export interface CameraSpec {
 export const CAMERA_PRESETS: Record<DroneModel, CameraSpec> = {
   mini_4_pro: {
     name: 'DJI Mini 4 Pro',
-    sensor_width_mm: 9.59,
+    sensor_width_mm: 9.59,       // 1/1.3" sensor
     sensor_height_mm: 7.19,
-    focal_length_mm: 6.72,
-    image_width_px: 8064,
+    focal_length_mm: 6.72,       // Equiv. 24mm
+    image_width_px: 8064,        // 48MP
     image_height_px: 6048,
-    drone_enum_value: 68,
-    payload_enum_value: 52,
+    drone_enum_value: 91,        // DJI internal ID (estimated)
+    payload_enum_value: 68,      // Camera ID (estimated)
     min_interval_12mp: 2.0,
     min_interval_48mp: 5.0,
   },
   mini_5_pro: {
     name: 'DJI Mini 5 Pro',
-    sensor_width_mm: 9.59,
-    sensor_height_mm: 7.19,
-    focal_length_mm: 6.72,
-    image_width_px: 8064,
-    image_height_px: 6048,
-    drone_enum_value: 91,
-    payload_enum_value: 80,
+    sensor_width_mm: 13.20,      // 1" sensor
+    sensor_height_mm: 8.80,
+    focal_length_mm: 8.82,       // Equiv. 24mm
+    image_width_px: 8192,        // 50MP
+    image_height_px: 6144,
+    drone_enum_value: 100,       // DJI internal ID (estimated)
+    payload_enum_value: 80,      // Camera ID (estimated)
     min_interval_12mp: 2.0,
-    min_interval_48mp: 5.0,
+    min_interval_48mp: 5.0,      // 50MP mode
   },
 };
 
