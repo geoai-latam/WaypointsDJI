@@ -182,6 +182,12 @@
   font-weight: 600;
 }
 
+/* Gimbal presets - 2 button variant */
+.gimbal-presets .segment-btn {
+  flex: 1;
+  max-width: 50%;
+}
+
 /* ===== Select ===== */
 .select-wrapper {
   position: relative;

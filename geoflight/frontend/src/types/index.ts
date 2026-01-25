@@ -180,9 +180,9 @@ export interface MissionConfig {
 }
 
 export const DEFAULT_MISSION_CONFIG: MissionConfig = {
-  droneModel: 'mini_4_pro',
+  droneModel: 'mini_5_pro',
   pattern: 'grid',
-  targetGsdCm: 2.0,
+  targetGsdCm: 1.0,
   frontOverlapPct: 75,
   sideOverlapPct: 65,
   flightAngleDeg: 0,
@@ -194,7 +194,7 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   useAltitudeOverride: false,
   // Timer mode defaults
   useTimerMode: false,
-  photoIntervalS: 2.0,
+  photoIntervalS: 5.0,
   // Simplification defaults
   useSimplify: false,
   simplifyAngleThreshold: 15.0,

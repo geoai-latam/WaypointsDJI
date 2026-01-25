@@ -48,8 +48,8 @@ function calculateTotalDistance(waypoints: Waypoint[]): number {
 }
 
 const DRONE_OPTIONS: { value: DroneModel; label: string }[] = [
-  { value: 'mini_4_pro', label: 'DJI Mini 4 Pro' },
   { value: 'mini_5_pro', label: 'DJI Mini 5 Pro' },
+  { value: 'mini_4_pro', label: 'DJI Mini 4 Pro' },
 ];
 
 const PATTERN_OPTIONS: { value: FlightPattern; label: string; icon: string }[] = [
@@ -398,9 +398,28 @@ export function ConfigPanel({
           )}
 
           {/* Gimbal Pitch */}
+          <div className="config-section">
+            <span className="section-label">Angulo Gimbal</span>
+            <div className="segmented-control gimbal-presets">
+              <button
+                className={`segment-btn ${config.gimbalPitchDeg === -90 ? 'active' : ''}`}
+                onClick={() => onConfigChange({ gimbalPitchDeg: -90 })}
+              >
+                <span className="segment-icon">⊥</span>
+                <span className="segment-label">Nadir</span>
+              </button>
+              <button
+                className={`segment-btn ${config.gimbalPitchDeg === -45 ? 'active' : ''}`}
+                onClick={() => onConfigChange({ gimbalPitchDeg: -45 })}
+              >
+                <span className="segment-icon">∠</span>
+                <span className="segment-label">Oblicua</span>
+              </button>
+            </div>
+          </div>
           <div className="slider-field">
             <div className="slider-header">
-              <span className="slider-label">Angulo Gimbal</span>
+              <span className="slider-label">Ajuste fino</span>
               <span className="slider-value">{config.gimbalPitchDeg}°</span>
             </div>
             <input
