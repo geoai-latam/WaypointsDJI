@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import type { MissionConfig, FlightParams, DroneModel, FlightPattern, FinishAction } from '../../types';
+import { useState, useMemo } from 'react';
+import type { MissionConfig, FlightParams, DroneModel, FlightPattern, FinishAction, SimplificationStats, Waypoint } from '../../types';
 import './ConfigPanel.css';
 
 interface ConfigPanelProps {
   config: MissionConfig;
   onConfigChange: (updates: Partial<MissionConfig>) => void;
   flightParams: FlightParams | null;
-  waypointCount: number;
+  waypoints: Waypoint[];
   warnings: string[];
   validationErrors: string[];
   isLoading: boolean;
@@ -15,6 +15,36 @@ interface ConfigPanelProps {
   hasPolygon: boolean;
   areaSqM: number;
   backendStatus: 'checking' | 'online' | 'offline';
+  simplificationStats: SimplificationStats | null;
+}
+
+/**
+ * Calculate haversine distance between two points in meters
+ */
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Calculate total flight distance from waypoints
+ */
+function calculateTotalDistance(waypoints: Waypoint[]): number {
+  if (waypoints.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < waypoints.length; i++) {
+    total += haversineDistance(
+      waypoints[i - 1].latitude, waypoints[i - 1].longitude,
+      waypoints[i].latitude, waypoints[i].longitude
+    );
+  }
+  return total;
 }
 
 const DRONE_OPTIONS: { value: DroneModel; label: string }[] = [
@@ -51,7 +81,7 @@ export function ConfigPanel({
   config,
   onConfigChange,
   flightParams,
-  waypointCount,
+  waypoints,
   validationErrors,
   isLoading,
   onGenerate,
@@ -59,9 +89,11 @@ export function ConfigPanel({
   hasPolygon,
   areaSqM,
   backendStatus,
+  simplificationStats,
 }: ConfigPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  const waypointCount = waypoints.length;
   const canGenerate = hasPolygon && backendStatus === 'online' && !isLoading;
   const canDownload = canGenerate && waypointCount > 0;
 
@@ -69,13 +101,37 @@ export function ConfigPanel({
     ? config.altitudeOverrideM
     : flightParams?.altitude_m || 0;
 
-  const effectiveSpeed = config.useSpeedOverride
+  // In timer mode, use actual speed; otherwise use the speed for desired overlap
+  const effectiveSpeed = config.useTimerMode
     ? config.speedMs
     : flightParams?.max_speed_ms || 5;
 
-  const estimatedTime = waypointCount > 0 && flightParams
-    ? Math.ceil((waypointCount * flightParams.photo_interval_s) / 60 + 2)
-    : 0;
+  // Calculate total flight distance from actual waypoints
+  const totalFlightDistance = useMemo(() => calculateTotalDistance(waypoints), [waypoints]);
+
+  // Estimate flight time based on actual waypoint distance
+  const estimatedTime = useMemo(() => {
+    if (waypointCount === 0) return 0;
+
+    // Use actual distance if waypoints exist, otherwise estimate from area
+    let flightDistance: number;
+    if (totalFlightDistance > 0) {
+      flightDistance = totalFlightDistance;
+    } else if (areaSqM > 0 && flightParams) {
+      // Fallback estimate for pre-generation
+      const sideLength = Math.sqrt(areaSqM);
+      const numLines = Math.ceil(sideLength / flightParams.line_spacing_m);
+      flightDistance = sideLength * numLines * 1.15;
+    } else {
+      return 0;
+    }
+
+    // Time = distance / speed + 2 min buffer for takeoff/landing
+    const speed = config.useTimerMode ? config.speedMs : (flightParams?.max_speed_ms || 5);
+    const flightTimeMin = (flightDistance / speed) / 60 + 2;
+
+    return Math.ceil(flightTimeMin);
+  }, [waypointCount, totalFlightDistance, areaSqM, flightParams, config.useTimerMode, config.speedMs]);
 
   const waypointExceeded = waypointCount > 99;
 
@@ -104,9 +160,14 @@ export function ConfigPanel({
             </div>
             <div className="summary-metric">
               <span className="value">
-                ~{waypointCount || '-'}
+                {totalFlightDistance > 0
+                  ? (totalFlightDistance >= 1000
+                      ? `${(totalFlightDistance / 1000).toFixed(1)}`
+                      : `${Math.round(totalFlightDistance)}`)
+                  : '-'}
+                <span className="unit">{totalFlightDistance >= 1000 ? 'km' : 'm'}</span>
               </span>
-              <span className="label">Fotos</span>
+              <span className="label">Distancia</span>
             </div>
             <div className="summary-metric highlight">
               <span className="value">
@@ -125,7 +186,20 @@ export function ConfigPanel({
           <div className="alert-content">
             <div className="alert-title">Limite excedido: {waypointCount}/99</div>
             <div className="alert-message">
-              Sube el GSD a {(config.targetGsdCm * 1.5).toFixed(1)} cm/px o divide el poligono
+              Sube el GSD a {(config.targetGsdCm * 1.5).toFixed(1)} cm/px, divide el poligono o habilita simplificacion
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simplification stats */}
+      {simplificationStats && simplificationStats.simplification_enabled && (
+        <div className="alert-callout success">
+          <span className="alert-icon">✓</span>
+          <div className="alert-content">
+            <div className="alert-title">Simplificado: {simplificationStats.original_count} → {simplificationStats.simplified_count}</div>
+            <div className="alert-message">
+              Reduccion del {simplificationStats.reduction_percent}% en waypoints
             </div>
           </div>
         </div>
@@ -266,10 +340,18 @@ export function ConfigPanel({
         <input
           type="checkbox"
           checked={config.use48mp}
-          onChange={(e) => onConfigChange({ use48mp: e.target.checked })}
+          onChange={(e) => {
+            const use48mp = e.target.checked;
+            // Adjust interval if switching to 48MP and current interval is too low
+            const updates: Partial<typeof config> = { use48mp };
+            if (use48mp && config.photoIntervalS < 5) {
+              updates.photoIntervalS = 5;
+            }
+            onConfigChange(updates);
+          }}
         />
         <span className="toggle-label">Modo 48MP</span>
-        <span className="toggle-hint">Mayor resolucion</span>
+        <span className="toggle-hint">{config.useTimerMode ? `Min ${config.use48mp ? 5 : 2}s` : 'Mayor resolución'}</span>
       </label>
 
       {/* Advanced Accordion */}
@@ -315,38 +397,6 @@ export function ConfigPanel({
             </div>
           )}
 
-          {/* Speed Override */}
-          <label className="toggle-field">
-            <input
-              type="checkbox"
-              checked={config.useSpeedOverride}
-              onChange={(e) => onConfigChange({ useSpeedOverride: e.target.checked })}
-            />
-            <span className="toggle-label">Velocidad manual</span>
-          </label>
-
-          {config.useSpeedOverride && (
-            <div className="slider-field">
-              <div className="slider-header">
-                <span className="slider-label">Velocidad</span>
-                <span className="slider-value override">{config.speedMs} m/s</span>
-              </div>
-              <input
-                type="range"
-                className="slider-track"
-                min="1"
-                max="15"
-                step="0.5"
-                value={config.speedMs}
-                onChange={(e) => onConfigChange({ speedMs: parseFloat(e.target.value) })}
-              />
-              <div className="slider-hints">
-                <span>1 m/s</span>
-                <span>15 m/s</span>
-              </div>
-            </div>
-          )}
-
           {/* Gimbal Pitch */}
           <div className="slider-field">
             <div className="slider-header">
@@ -383,6 +433,164 @@ export function ConfigPanel({
               </select>
             </div>
           </div>
+
+          {/* Timer Mode - For simplified waypoints with photo timer */}
+          <div className="divider" />
+          <div className="config-section">
+            <span className="section-label">Modo Timer (Simplificacion)</span>
+            <p className="section-hint">Usa timer de fotos en DJI Fly para reducir waypoints</p>
+          </div>
+
+          <label className="toggle-field">
+            <input
+              type="checkbox"
+              checked={config.useTimerMode}
+              onChange={(e) => onConfigChange({
+                useTimerMode: e.target.checked,
+                useSimplify: e.target.checked, // Enable simplification when timer mode is on
+              })}
+            />
+            <span className="toggle-label">Activar modo timer</span>
+            <span className="toggle-hint">Fotos por intervalo</span>
+          </label>
+
+          {config.useTimerMode && (
+            <>
+              {/* Photo Interval Slider */}
+              <div className="slider-field">
+                <div className="slider-header">
+                  <span className="slider-label">Intervalo de foto (Timer DJI)</span>
+                  <span className="slider-value">{config.photoIntervalS}s</span>
+                </div>
+                <input
+                  type="range"
+                  className="slider-track"
+                  min={config.use48mp ? 5 : 2}
+                  max="10"
+                  step="1"
+                  value={Math.max(config.photoIntervalS, config.use48mp ? 5 : 2)}
+                  onChange={(e) => onConfigChange({ photoIntervalS: parseInt(e.target.value) })}
+                />
+                <div className="slider-hints">
+                  <span>{config.use48mp ? '5s (48MP min)' : '2s (12MP min)'}</span>
+                  <span>10s</span>
+                </div>
+              </div>
+
+              {/* Speed Slider */}
+              <div className="slider-field">
+                <div className="slider-header">
+                  <span className="slider-label">Velocidad</span>
+                  <span className="slider-value">{config.speedMs.toFixed(1)} m/s</span>
+                </div>
+                <input
+                  type="range"
+                  className="slider-track"
+                  min="1"
+                  max="15"
+                  step="0.5"
+                  value={config.speedMs}
+                  onChange={(e) => onConfigChange({ speedMs: parseFloat(e.target.value) })}
+                />
+                <div className="slider-hints">
+                  <span>1 m/s</span>
+                  <span>15 m/s</span>
+                </div>
+              </div>
+
+              {/* Calculated Values Display */}
+              {flightParams && (
+                <div className="timer-calc-section">
+                  <div className="timer-calc-title">Resultados con Timer</div>
+                  <div className="timer-calc-grid">
+                    <div className="timer-calc-item full-width">
+                      <span className="calc-label">Espaciado entre fotos (vel × intervalo)</span>
+                      <span className="calc-value">
+                        {(config.speedMs * config.photoIntervalS).toFixed(1)} m
+                        <span className="calc-detail"> = {config.speedMs} m/s × {config.photoIntervalS}s</span>
+                      </span>
+                    </div>
+                    <div className="timer-calc-item">
+                      <span className="calc-label">Overlap Frontal Real</span>
+                      <span className={`calc-value ${
+                        flightParams.actual_front_overlap_pct === undefined ? '' :
+                        flightParams.actual_front_overlap_pct < 60 ? 'warning' : 'success'
+                      }`}>
+                        {flightParams.actual_front_overlap_pct !== undefined
+                          ? `${flightParams.actual_front_overlap_pct}%`
+                          : '--'}
+                      </span>
+                      <span className="calc-detail">Deseado: {config.frontOverlapPct}%</span>
+                    </div>
+                    <div className="timer-calc-item">
+                      <span className="calc-label">Overlap Lateral</span>
+                      <span className="calc-value success">
+                        {config.sideOverlapPct}%
+                      </span>
+                      <span className="calc-detail">Fijo por patrón</span>
+                    </div>
+                  </div>
+                  <div className="timer-calc-hint">
+                    <strong>Velocidad óptima para {config.frontOverlapPct}% frontal:</strong> {flightParams.max_speed_ms.toFixed(1)} m/s
+                  </div>
+                </div>
+              )}
+
+              {/* Simplification options */}
+              <div className="divider" />
+              <div className="slider-field">
+                <div className="slider-header">
+                  <span className="slider-label">Umbral de giro</span>
+                  <span className="slider-value">{config.simplifyAngleThreshold}°</span>
+                </div>
+                <input
+                  type="range"
+                  className="slider-track"
+                  min="5"
+                  max="120"
+                  step="5"
+                  value={config.simplifyAngleThreshold}
+                  onChange={(e) => onConfigChange({ simplifyAngleThreshold: parseInt(e.target.value) })}
+                />
+                <div className="slider-hints">
+                  <span>5° (mas waypoints)</span>
+                  <span>120° (menos)</span>
+                </div>
+              </div>
+
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={config.useSimplifyTimeConstraint}
+                  onChange={(e) => onConfigChange({ useSimplifyTimeConstraint: e.target.checked })}
+                />
+                <span className="toggle-label">Waypoints intermedios</span>
+                <span className="toggle-hint">Para tramos largos</span>
+              </label>
+
+              {config.useSimplifyTimeConstraint && (
+                <div className="slider-field">
+                  <div className="slider-header">
+                    <span className="slider-label">Max tiempo entre WP</span>
+                    <span className="slider-value">{config.simplifyMaxTimeBetween}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="slider-track"
+                    min="10"
+                    max="120"
+                    step="10"
+                    value={config.simplifyMaxTimeBetween}
+                    onChange={(e) => onConfigChange({ simplifyMaxTimeBetween: parseInt(e.target.value) })}
+                  />
+                  <div className="slider-hints">
+                    <span>10s</span>
+                    <span>120s</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

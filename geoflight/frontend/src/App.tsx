@@ -23,6 +23,7 @@ function App() {
     downloadKmz,
     backendStatus,
     validationErrors,
+    simplificationStats,
   } = useMission();
 
   const handlePolygonComplete = useCallback(
@@ -62,7 +63,7 @@ function App() {
             config={config}
             onConfigChange={updateConfig}
             flightParams={flightParams}
-            waypointCount={waypoints.length}
+            waypoints={waypoints}
             warnings={warnings}
             validationErrors={validationErrors}
             isLoading={isLoading}
@@ -71,6 +72,7 @@ function App() {
             hasPolygon={polygonCoords.length >= 3}
             areaSqM={areaSqM}
             backendStatus={backendStatus}
+            simplificationStats={simplificationStats}
           />
         </aside>
       </main>

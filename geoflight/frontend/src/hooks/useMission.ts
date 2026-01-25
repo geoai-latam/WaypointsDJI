@@ -5,9 +5,11 @@ import type {
   Waypoint,
   Coordinate,
   MissionRequest,
+  SimplificationStats,
 } from '../types';
 import { DEFAULT_MISSION_CONFIG } from '../types';
 import * as api from '../services/api';
+import { calculateFlightParams } from '../services/calculator';
 
 interface UseMissionReturn {
   config: MissionConfig;
@@ -22,11 +24,11 @@ interface UseMissionReturn {
   setPolygonCoords: (coords: Coordinate[]) => void;
   areaSqM: number;
   setAreaSqM: (area: number) => void;
-  calculateParams: () => Promise<void>;
   generateMission: () => Promise<void>;
   downloadKmz: () => Promise<void>;
   backendStatus: 'checking' | 'online' | 'offline';
   validationErrors: string[];
+  simplificationStats: SimplificationStats | null;
 }
 
 export function useMission(): UseMissionReturn {
@@ -40,12 +42,13 @@ export function useMission(): UseMissionReturn {
   const [areaSqM, setAreaSqM] = useState(0);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [simplificationStats, setSimplificationStats] = useState<SimplificationStats | null>(null);
 
-  // Check backend connectivity on mount
+  // Check backend connectivity on mount (needed for waypoint generation)
   useEffect(() => {
     const checkBackend = async () => {
       try {
-        const response = await fetch('/api/cameras');
+        const response = await fetch('/health');
         if (response.ok) {
           setBackendStatus('online');
         } else {
@@ -91,25 +94,47 @@ export function useMission(): UseMissionReturn {
       errors.push('Altitud mayor a 120m. Verifica regulaciones locales.');
     }
 
-    setValidationErrors(errors);
-  }, [config, areaSqM]);
-
-  // Auto-calculate params when config or area changes
-  useEffect(() => {
-    if (backendStatus === 'online' && areaSqM > 0) {
-      calculateParams();
+    // Timer mode: warn if actual overlap is too low for photogrammetry
+    if (config.useTimerMode && flightParams?.actual_front_overlap_pct !== undefined) {
+      if (flightParams.actual_front_overlap_pct < 50) {
+        errors.push(
+          `Overlap real (${flightParams.actual_front_overlap_pct}%) es muy bajo para fotogrametría. ` +
+          `Reduce velocidad o intervalo.`
+        );
+      }
     }
+
+    setValidationErrors(errors);
+  }, [config, areaSqM, flightParams]);
+
+  // Auto-calculate params when config or area changes (runs locally, no backend needed)
+  useEffect(() => {
+    const params = calculateFlightParams({
+      droneModel: config.droneModel,
+      targetGsdCm: config.targetGsdCm,
+      frontOverlapPct: config.frontOverlapPct,
+      sideOverlapPct: config.sideOverlapPct,
+      use48mp: config.use48mp,
+      areaSqM: areaSqM > 0 ? areaSqM : undefined,
+      altitudeOverrideM: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
+      // Timer mode parameters
+      useTimerMode: config.useTimerMode,
+      photoIntervalS: config.photoIntervalS,
+      speedMs: config.speedMs,
+    });
+    setFlightParams(params);
   }, [
+    config.droneModel,
     config.targetGsdCm,
     config.frontOverlapPct,
     config.sideOverlapPct,
     config.use48mp,
     config.useAltitudeOverride,
     config.altitudeOverrideM,
-    config.useSpeedOverride,
+    config.useTimerMode,
+    config.photoIntervalS,
     config.speedMs,
     areaSqM,
-    backendStatus,
   ]);
 
   const updateConfig = useCallback((updates: Partial<MissionConfig>) => {
@@ -121,30 +146,6 @@ export function useMission(): UseMissionReturn {
   const clearError = useCallback(() => {
     setError(null);
   }, []);
-
-  const calculateParams = useCallback(async () => {
-    if (backendStatus !== 'online') {
-      setError('El servidor no está disponible. Verifica que el backend esté corriendo.');
-      return;
-    }
-
-    try {
-      const params = await api.calculateParams({
-        drone_model: config.droneModel,
-        target_gsd_cm: config.targetGsdCm,
-        front_overlap_pct: config.frontOverlapPct,
-        side_overlap_pct: config.sideOverlapPct,
-        use_48mp: config.use48mp,
-        area_m2: areaSqM > 0 ? areaSqM : undefined,
-        altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
-        speed_override_ms: config.useSpeedOverride ? config.speedMs : undefined,
-      });
-      setFlightParams(params);
-    } catch (err) {
-      console.error('Calculate error:', err);
-      // Don't show error for calculate, just log it
-    }
-  }, [config, areaSqM, backendStatus]);
 
   const generateMission = useCallback(async () => {
     // Validations
@@ -166,6 +167,7 @@ export function useMission(): UseMissionReturn {
     setIsLoading(true);
     setError(null);
     setWarnings([]);
+    setSimplificationStats(null);
 
     try {
       const request: MissionRequest = {
@@ -177,11 +179,16 @@ export function useMission(): UseMissionReturn {
         side_overlap_pct: config.sideOverlapPct,
         flight_angle_deg: config.flightAngleDeg,
         use_48mp: config.use48mp,
-        speed_ms: config.useSpeedOverride ? config.speedMs : undefined,
+        speed_ms: config.useTimerMode ? config.speedMs : undefined,
         altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
         gimbal_pitch_deg: config.gimbalPitchDeg,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
+        simplify: config.useSimplify ? {
+          enabled: true,
+          angle_threshold_deg: config.simplifyAngleThreshold,
+          max_time_between_s: config.useSimplifyTimeConstraint ? config.simplifyMaxTimeBetween : undefined,
+        } : undefined,
       };
 
       const response = await api.generateWaypoints(request);
@@ -189,14 +196,40 @@ export function useMission(): UseMissionReturn {
       if (response.success && response.waypoints) {
         setWaypoints(response.waypoints);
         if (response.flight_params) {
-          setFlightParams(response.flight_params);
+          // Merge backend params with timer mode calculations
+          const backendParams = response.flight_params;
+
+          if (config.useTimerMode) {
+            const interval = config.photoIntervalS;
+            const speed = config.speedMs;
+            const actualPhotoSpacing = speed * interval;
+            const actualFrontOverlap = Math.round((1 - actualPhotoSpacing / backendParams.footprint_height_m) * 100);
+
+            // Recalculate optimal speed for desired overlap with custom interval
+            // Formula: optimal_speed = photo_spacing_for_desired_overlap / interval
+            const optimalSpeed = backendParams.photo_spacing_m / interval;
+
+            setFlightParams({
+              ...backendParams,
+              photo_interval_s: interval,
+              max_speed_ms: Math.round(optimalSpeed * 100) / 100, // Optimal speed for custom interval
+              actual_speed_ms: speed,
+              actual_photo_spacing_m: actualPhotoSpacing,
+              actual_front_overlap_pct: Math.max(0, Math.min(99, actualFrontOverlap)),
+            });
+          } else {
+            setFlightParams(backendParams);
+          }
+        }
+        if (response.simplification_stats) {
+          setSimplificationStats(response.simplification_stats);
         }
 
         // Add custom warnings
         const allWarnings = [...response.warnings];
 
         if (response.waypoints.length > 99) {
-          allWarnings.push(`La misión tiene ${response.waypoints.length} waypoints. DJI Fly soporta máximo 99. Considera reducir el área o aumentar el GSD.`);
+          allWarnings.push(`La misión tiene ${response.waypoints.length} waypoints. DJI Fly soporta máximo 99. Considera reducir el área, aumentar el GSD o habilitar simplificación.`);
         }
 
         if (response.flight_params && response.flight_params.altitude_m > 120) {
@@ -245,11 +278,16 @@ export function useMission(): UseMissionReturn {
         side_overlap_pct: config.sideOverlapPct,
         flight_angle_deg: config.flightAngleDeg,
         use_48mp: config.use48mp,
-        speed_ms: config.useSpeedOverride ? config.speedMs : undefined,
+        speed_ms: config.useTimerMode ? config.speedMs : undefined,
         altitude_override_m: config.useAltitudeOverride ? config.altitudeOverrideM : undefined,
         gimbal_pitch_deg: config.gimbalPitchDeg,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
+        simplify: config.useSimplify ? {
+          enabled: true,
+          angle_threshold_deg: config.simplifyAngleThreshold,
+          max_time_between_s: config.useSimplifyTimeConstraint ? config.simplifyMaxTimeBetween : undefined,
+        } : undefined,
       };
 
       const blob = await api.downloadKmz(request);
@@ -276,10 +314,10 @@ export function useMission(): UseMissionReturn {
     setPolygonCoords,
     areaSqM,
     setAreaSqM,
-    calculateParams,
     generateMission,
     downloadKmz,
     backendStatus,
     validationErrors,
+    simplificationStats,
   };
 }

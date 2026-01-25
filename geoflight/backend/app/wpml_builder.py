@@ -14,7 +14,7 @@ class GimbalRotateParams:
     gimbal_rotate_mode: str = "absoluteAngle"
     gimbal_pitch_rotate_enable: int = 1
     gimbal_pitch_rotate_angle: float = -90  # Default to nadir for photogrammetry
-    gimbal_roll_rotate_enable: int = 0
+    gimbal_roll_rotate_enable: int = 1  # Must be 1 for DJI Fly compatibility
     gimbal_roll_rotate_angle: float = 0
     gimbal_yaw_rotate_enable: int = 0
     gimbal_yaw_rotate_angle: float = 0
@@ -115,7 +115,6 @@ class WPMLBuilder:
       <wpml:distance>0</wpml:distance>
       <wpml:duration>0</wpml:duration>
       <wpml:autoFlightSpeed>{speed}</wpml:autoFlightSpeed>
-      <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
 {placemarks_xml}
     </Folder>
   </Document>
@@ -157,6 +156,10 @@ class WPMLBuilder:
             heading_angle_enable = 0
 
         # Base placemark structure
+        # NOTE: DJI Fly RC2 requires specific values:
+        # - executeHeight must be integer
+        # - waypointHeadingAngle must be 0 when using followWayline mode
+        # - useStraightLine must be 0
         placemark_xml = f'''      <Placemark>
         <Point>
           <coordinates>
@@ -164,11 +167,11 @@ class WPMLBuilder:
           </coordinates>
         </Point>
         <wpml:index>{wp.index}</wpml:index>
-        <wpml:executeHeight>{wp.altitude}</wpml:executeHeight>
+        <wpml:executeHeight>{int(wp.altitude)}</wpml:executeHeight>
         <wpml:waypointSpeed>{wp.speed}</wpml:waypointSpeed>
         <wpml:waypointHeadingParam>
           <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
-          <wpml:waypointHeadingAngle>{int(wp.heading)}</wpml:waypointHeadingAngle>
+          <wpml:waypointHeadingAngle>0</wpml:waypointHeadingAngle>
           <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
           <wpml:waypointHeadingAngleEnable>{heading_angle_enable}</wpml:waypointHeadingAngleEnable>
           <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
@@ -178,12 +181,16 @@ class WPMLBuilder:
           <wpml:waypointTurnMode>{turn_mode}</wpml:waypointTurnMode>
           <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
         </wpml:waypointTurnParam>
-        <wpml:useStraightLine>1</wpml:useStraightLine>'''
+        <wpml:useStraightLine>0</wpml:useStraightLine>'''
 
         # Add action groups
+        # NOTE: Based on DJI Fly RC2 analysis:
+        # - takePhoto ONLY on first waypoint
+        # - gimbalRotate ONLY on first waypoint
+        # - gimbalEvenlyRotate on ALL waypoints except the last one
         action_groups = []
 
-        if is_first and wp.take_photo:
+        if is_first:
             # First waypoint: takePhoto + gimbalRotate
             gimbal_params = GimbalRotateParams(gimbal_pitch_rotate_angle=gimbal_pitch)
             actions = [
@@ -194,31 +201,25 @@ class WPMLBuilder:
 
             # Add gimbalEvenlyRotate for transition to next waypoint
             if len(self.waypoints) > 1:
-                actions2 = [self._generate_action_gimbal_evenly_rotate()]
+                actions2 = [self._generate_action_gimbal_evenly_rotate(gimbal_pitch)]
                 action_groups.append(self._generate_action_group(2, wp.index, wp.index + 1, actions2))
 
-        elif not is_last and wp.take_photo:
-            # Intermediate waypoints: takePhoto + gimbalEvenlyRotate
-            actions = [self._generate_action_take_photo()]
-            action_groups.append(self._generate_action_group(1, wp.index, wp.index, actions))
+        elif not is_last:
+            # Intermediate waypoints: ONLY gimbalEvenlyRotate (no takePhoto!)
+            actions = [self._generate_action_gimbal_evenly_rotate(gimbal_pitch)]
+            action_groups.append(self._generate_action_group(2, wp.index, wp.index + 1, actions))
 
-            if wp.index < len(self.waypoints) - 1:
-                actions2 = [self._generate_action_gimbal_evenly_rotate()]
-                action_groups.append(self._generate_action_group(2, wp.index, wp.index + 1, actions2))
-
-        elif is_last and wp.take_photo:
-            # Last waypoint: only takePhoto
-            actions = [self._generate_action_take_photo()]
-            action_groups.append(self._generate_action_group(1, wp.index, wp.index, actions))
+        # Last waypoint: NO action groups (as seen in DA4 file)
 
         # Add action groups to XML
         if action_groups:
             placemark_xml += '\n' + '\n'.join(action_groups)
 
         # Close placemark with gimbal heading param
+        # NOTE: waypointGimbalPitchAngle must be 0 for DJI Fly RC2 compatibility
         placemark_xml += f'''
         <wpml:waypointGimbalHeadingParam>
-          <wpml:waypointGimbalPitchAngle>{int(wp.gimbal_pitch)}</wpml:waypointGimbalPitchAngle>
+          <wpml:waypointGimbalPitchAngle>0</wpml:waypointGimbalPitchAngle>
           <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
         </wpml:waypointGimbalHeadingParam>
       </Placemark>'''
@@ -239,7 +240,10 @@ class WPMLBuilder:
           </wpml:action>'''
 
     def _generate_action_gimbal_rotate(self, params: GimbalRotateParams) -> str:
-        """Generate gimbalRotate action XML."""
+        """Generate gimbalRotate action XML.
+
+        NOTE: All angle values must be integers for DJI Fly RC2 compatibility.
+        """
         action_id = self.action_id_counter
         self.action_id_counter += 1
         return f'''          <wpml:action>
@@ -249,26 +253,29 @@ class WPMLBuilder:
               <wpml:gimbalHeadingYawBase>{params.gimbal_heading_yaw_base}</wpml:gimbalHeadingYawBase>
               <wpml:gimbalRotateMode>{params.gimbal_rotate_mode}</wpml:gimbalRotateMode>
               <wpml:gimbalPitchRotateEnable>{params.gimbal_pitch_rotate_enable}</wpml:gimbalPitchRotateEnable>
-              <wpml:gimbalPitchRotateAngle>{params.gimbal_pitch_rotate_angle}</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalPitchRotateAngle>{int(params.gimbal_pitch_rotate_angle)}</wpml:gimbalPitchRotateAngle>
               <wpml:gimbalRollRotateEnable>{params.gimbal_roll_rotate_enable}</wpml:gimbalRollRotateEnable>
-              <wpml:gimbalRollRotateAngle>{params.gimbal_roll_rotate_angle}</wpml:gimbalRollRotateAngle>
+              <wpml:gimbalRollRotateAngle>{int(params.gimbal_roll_rotate_angle)}</wpml:gimbalRollRotateAngle>
               <wpml:gimbalYawRotateEnable>{params.gimbal_yaw_rotate_enable}</wpml:gimbalYawRotateEnable>
-              <wpml:gimbalYawRotateAngle>{params.gimbal_yaw_rotate_angle}</wpml:gimbalYawRotateAngle>
+              <wpml:gimbalYawRotateAngle>{int(params.gimbal_yaw_rotate_angle)}</wpml:gimbalYawRotateAngle>
               <wpml:gimbalRotateTimeEnable>{params.gimbal_rotate_time_enable}</wpml:gimbalRotateTimeEnable>
-              <wpml:gimbalRotateTime>{params.gimbal_rotate_time}</wpml:gimbalRotateTime>
+              <wpml:gimbalRotateTime>{int(params.gimbal_rotate_time)}</wpml:gimbalRotateTime>
               <wpml:payloadPositionIndex>{params.payload_position_index}</wpml:payloadPositionIndex>
             </wpml:actionActuatorFuncParam>
           </wpml:action>'''
 
-    def _generate_action_gimbal_evenly_rotate(self) -> str:
-        """Generate gimbalEvenlyRotate action XML."""
+    def _generate_action_gimbal_evenly_rotate(self, gimbal_pitch: float = -90) -> str:
+        """Generate gimbalEvenlyRotate action XML.
+
+        NOTE: gimbalPitchRotateAngle must match the gimbalRotate pitch for DJI Fly RC2.
+        """
         action_id = self.action_id_counter
         self.action_id_counter += 1
         return f'''          <wpml:action>
             <wpml:actionId>{action_id}</wpml:actionId>
             <wpml:actionActuatorFunc>gimbalEvenlyRotate</wpml:actionActuatorFunc>
             <wpml:actionActuatorFuncParam>
-              <wpml:gimbalPitchRotateAngle>0</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalPitchRotateAngle>{int(gimbal_pitch)}</wpml:gimbalPitchRotateAngle>
               <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
               <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
             </wpml:actionActuatorFuncParam>

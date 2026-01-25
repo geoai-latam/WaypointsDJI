@@ -10,10 +10,8 @@ from .models import (
     FlightPattern,
     MissionRequest,
     MissionResponse,
-    CalculateRequest,
-    FlightParams,
-    CameraListResponse,
     Waypoint,
+    SimplificationStats,
     CAMERA_PRESETS,
 )
 from .calculator import PhotogrammetryCalculator
@@ -24,6 +22,7 @@ from .patterns import (
     OrbitPatternGenerator,
 )
 from .kmz_packager import KMZPackager
+from .waypoint_simplifier import simplify_waypoints
 
 
 app = FastAPI(
@@ -49,38 +48,11 @@ async def root():
         "name": settings.app_name,
         "version": settings.version,
         "endpoints": {
-            "cameras": "/api/cameras",
-            "calculate": "/api/calculate",
             "generate_waypoints": "/api/generate-waypoints",
             "generate_kmz": "/api/generate-kmz",
         },
+        "note": "Camera presets and flight calculations are done client-side",
     }
-
-
-@app.get("/api/cameras", response_model=CameraListResponse)
-async def get_cameras():
-    """Get list of available camera/drone presets."""
-    return CameraListResponse(
-        cameras={model.value: spec for model, spec in CAMERA_PRESETS.items()}
-    )
-
-
-@app.post("/api/calculate", response_model=FlightParams)
-async def calculate_params(request: CalculateRequest):
-    """Calculate flight parameters without generating waypoints."""
-    calculator = PhotogrammetryCalculator.for_drone(request.drone_model)
-
-    params = calculator.calculate_flight_params(
-        target_gsd_cm=request.target_gsd_cm,
-        front_overlap_pct=request.front_overlap_pct,
-        side_overlap_pct=request.side_overlap_pct,
-        use_48mp=request.use_48mp,
-        area_m2=request.area_m2,
-        altitude_override_m=request.altitude_override_m,
-        speed_override_ms=request.speed_override_ms,
-    )
-
-    return params
 
 
 @app.post("/api/generate-waypoints", response_model=MissionResponse)
@@ -171,12 +143,30 @@ async def generate_waypoints(request: MissionRequest):
             generator = GridPatternGenerator(flight_params, request.flight_angle_deg, request.gimbal_pitch_deg)
             waypoints = generator.generate(polygon_coords=request.polygon.coordinates)
 
+        # Apply waypoint simplification if enabled
+        simplification_stats = None
+        if request.simplify and request.simplify.enabled:
+            waypoints, stats = simplify_waypoints(
+                waypoints=waypoints,
+                enabled=True,
+                angle_threshold_deg=request.simplify.angle_threshold_deg,
+                max_time_between_s=request.simplify.max_time_between_s,
+                max_distance_between_m=request.simplify.max_distance_between_m,
+            )
+            simplification_stats = SimplificationStats(**stats)
+
+            if stats["reduction_percent"] > 0:
+                warnings.append(
+                    f"Waypoints simplified: {stats['original_count']} -> {stats['simplified_count']} "
+                    f"({stats['reduction_percent']}% reduction)"
+                )
+
         # Check waypoint limit
         if len(waypoints) > settings.max_waypoints_per_mission:
             warnings.append(
                 f"Mission has {len(waypoints)} waypoints, which exceeds the "
                 f"DJI Fly limit of {settings.max_waypoints_per_mission}. "
-                "Consider splitting into multiple missions."
+                "Consider splitting into multiple missions or enabling simplification."
             )
 
         return MissionResponse(
@@ -185,6 +175,7 @@ async def generate_waypoints(request: MissionRequest):
             flight_params=flight_params,
             waypoints=waypoints,
             warnings=warnings,
+            simplification_stats=simplification_stats,
         )
 
     except Exception as e:

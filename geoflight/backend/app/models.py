@@ -132,6 +132,24 @@ class OrbitDefinition(BaseModel):
     altitude_step_m: float = Field(10, description="Altitude step between orbits")
 
 
+class SimplificationOptions(BaseModel):
+    """Options for waypoint simplification."""
+
+    enabled: bool = Field(False, description="Enable waypoint simplification")
+    angle_threshold_deg: float = Field(
+        10.0, ge=1.0, le=120.0,
+        description="Minimum heading change to keep a waypoint (degrees). Higher = more aggressive simplification."
+    )
+    max_time_between_s: Optional[float] = Field(
+        None, ge=1.0, le=120.0,
+        description="Maximum time between waypoints (seconds). Drone will follow heading with timer."
+    )
+    max_distance_between_m: Optional[float] = Field(
+        None, ge=10.0, le=2000.0,
+        description="Maximum distance between waypoints (meters)"
+    )
+
+
 class MissionRequest(BaseModel):
     """Request to generate a flight mission."""
 
@@ -156,6 +174,12 @@ class MissionRequest(BaseModel):
     finish_action: FinishAction = FinishAction.GO_HOME
     takeoff_altitude_m: float = Field(30, gt=0, description="Initial takeoff altitude")
 
+    # Simplification options (optional)
+    simplify: Optional[SimplificationOptions] = Field(
+        None,
+        description="Optional waypoint simplification to reduce KMZ size"
+    )
+
 
 class CalculateRequest(BaseModel):
     """Request to calculate flight parameters only."""
@@ -170,6 +194,15 @@ class CalculateRequest(BaseModel):
     speed_override_ms: Optional[float] = Field(None, gt=0, le=15, description="Override calculated speed")
 
 
+class SimplificationStats(BaseModel):
+    """Statistics about waypoint simplification."""
+
+    original_count: int = Field(..., description="Original number of waypoints")
+    simplified_count: int = Field(..., description="Number of waypoints after simplification")
+    reduction_percent: float = Field(..., description="Percentage reduction in waypoints")
+    simplification_enabled: bool = Field(..., description="Whether simplification was applied")
+
+
 class MissionResponse(BaseModel):
     """Response with generated mission."""
 
@@ -178,6 +211,10 @@ class MissionResponse(BaseModel):
     flight_params: Optional[FlightParams] = None
     waypoints: Optional[list[Waypoint]] = None
     warnings: list[str] = Field(default_factory=list)
+    simplification_stats: Optional[SimplificationStats] = Field(
+        None,
+        description="Statistics about waypoint simplification (if enabled)"
+    )
 
 
 class CameraListResponse(BaseModel):

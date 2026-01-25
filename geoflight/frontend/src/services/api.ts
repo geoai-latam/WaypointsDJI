@@ -1,9 +1,8 @@
 // API service for GeoFlight backend
+// Note: Camera presets and flight calculations are now done client-side
+// See: types/index.ts (CAMERA_PRESETS) and services/calculator.ts
 
 import type {
-  CameraListResponse,
-  CalculateRequest,
-  FlightParams,
   MissionRequest,
   MissionResponse,
 } from '../types';
@@ -26,22 +25,6 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new Error(error.detail || `HTTP error ${response.status}`);
   }
   return response.json();
-}
-
-export async function getCameras(): Promise<CameraListResponse> {
-  const response = await fetch(`${API_BASE}/cameras`);
-  return handleResponse<CameraListResponse>(response);
-}
-
-export async function calculateParams(
-  request: CalculateRequest
-): Promise<FlightParams> {
-  const response = await fetch(`${API_BASE}/calculate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  return handleResponse<FlightParams>(response);
 }
 
 export async function generateWaypoints(
