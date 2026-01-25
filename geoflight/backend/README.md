@@ -6,18 +6,20 @@ API REST con FastAPI para planificación de vuelos fotogramétricos con drones D
 
 ## Arquitectura
 
+> **Nota:** Los endpoints `/api/cameras` y `/api/calculate` fueron migrados al cliente. Los cálculos fotogramétricos ahora se ejecutan en el navegador.
+
 ```mermaid
 flowchart TB
     subgraph API["Endpoints FastAPI"]
-        E1["/api/cameras"]
-        E2["/api/calculate"]
         E3["/api/generate-waypoints"]
         E4["/api/generate-kmz"]
+        E5["/health"]
     end
 
     subgraph Core["Módulos Core"]
-        CALC["calculator.py<br/>Cálculos fotogramétricos"]
+        CALC["calculator.py<br/>Cálculos internos"]
         MODELS["models.py<br/>Pydantic schemas"]
+        SIMP["waypoint_simplifier.py<br/>Simplificación"]
     end
 
     subgraph Patterns["Generadores de Patrones"]
@@ -32,9 +34,9 @@ flowchart TB
         KMZ["kmz_packager.py"]
     end
 
-    E2 --> CALC
     E3 --> CALC
     E3 --> Patterns
+    E3 --> SIMP
     E4 --> KMZ
     KMZ --> WPML
 ```
@@ -71,11 +73,11 @@ uvicorn app.main:app --reload --port 8000
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/cameras` | Lista drones/cámaras disponibles |
-| POST | `/api/calculate` | Calcula parámetros de vuelo |
 | POST | `/api/generate-waypoints` | Genera waypoints según patrón |
 | POST | `/api/generate-kmz` | Genera y descarga archivo KMZ |
 | GET | `/health` | Health check |
+
+> **Nota:** Los endpoints `/api/cameras` y `/api/calculate` fueron eliminados. Las especificaciones de cámara y cálculos fotogramétricos ahora están en el frontend (`CAMERA_PRESETS` y `calculator.ts`).
 
 ### Ejemplo: Generar Waypoints
 
@@ -91,11 +93,16 @@ curl -X POST http://localhost:8000/api/generate-waypoints \
         {"longitude": -74.0721, "latitude": 4.7105}
       ]
     },
-    "drone_model": "mini_4_pro",
+    "drone_model": "mini_5_pro",
     "pattern": "grid",
-    "target_gsd_cm": 2.0,
+    "target_gsd_cm": 1.0,
     "front_overlap_pct": 75,
-    "side_overlap_pct": 65
+    "side_overlap_pct": 65,
+    "gimbal_pitch_deg": -90,
+    "simplify": {
+      "enabled": true,
+      "angle_threshold_deg": 15
+    }
   }'
 ```
 
@@ -106,20 +113,22 @@ curl -X POST http://localhost:8000/api/generate-waypoints \
 ```
 backend/
 ├── app/
-│   ├── main.py           # FastAPI app + endpoints
-│   ├── config.py         # Configuración (CORS, límites)
-│   ├── models.py         # Modelos Pydantic
-│   ├── calculator.py     # Cálculos fotogramétricos
-│   ├── patterns/         # Generadores de patrones
-│   │   ├── base.py       # Clase base (transformaciones UTM)
-│   │   ├── grid.py       # Patrón serpentín
-│   │   ├── double_grid.py# Doble pasada perpendicular
-│   │   ├── corridor.py   # Corredor lineal
-│   │   └── orbit.py      # Órbita circular
-│   ├── wpml_builder.py   # Genera XML WPML para DJI
-│   └── kmz_packager.py   # Empaqueta KMZ (ZIP)
+│   ├── main.py              # FastAPI app + endpoints
+│   ├── config.py            # Configuración (CORS, límites)
+│   ├── models.py            # Modelos Pydantic
+│   ├── calculator.py        # Cálculos fotogramétricos internos
+│   ├── waypoint_simplifier.py # Simplificación de waypoints
+│   ├── patterns/            # Generadores de patrones
+│   │   ├── base.py          # Clase base (transformaciones UTM)
+│   │   ├── grid.py          # Patrón serpentín
+│   │   ├── double_grid.py   # Doble pasada perpendicular
+│   │   ├── corridor.py      # Corredor lineal
+│   │   └── orbit.py         # Órbita circular
+│   ├── wpml_builder.py      # Genera XML WPML para DJI
+│   └── kmz_packager.py      # Empaqueta KMZ (ZIP)
 ├── tests/
-│   └── test_api.py
+│   ├── test_api.py
+│   └── test_waypoint_simplifier.py
 └── requirements.txt
 ```
 

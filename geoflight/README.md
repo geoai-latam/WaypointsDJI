@@ -39,12 +39,13 @@ flowchart TB
         MapView[MapView.tsx<br/>ArcGIS 4.34]
         ConfigPanel[ConfigPanel.tsx]
         useMission[useMission Hook]
+        Calculator[calculator.ts<br/>Cálculos locales]
+        CameraPresets[CAMERA_PRESETS<br/>types/index.ts]
         ApiService[api.ts]
     end
 
     subgraph Backend["Backend (FastAPI)"]
         Main[main.py<br/>API Endpoints]
-        Calculator[calculator.py<br/>PhotogrammetryCalculator]
         Models[models.py<br/>Pydantic Models]
 
         subgraph Patterns["Patrones de Vuelo"]
@@ -55,6 +56,7 @@ flowchart TB
             Orbit[orbit.py]
         end
 
+        Simplifier[waypoint_simplifier.py]
         WPMLBuilder[wpml_builder.py]
         KMZPackager[kmz_packager.py]
     end
@@ -67,12 +69,14 @@ flowchart TB
     App --> MapView
     App --> ConfigPanel
     App --> useMission
+    useMission --> Calculator
+    Calculator --> CameraPresets
     useMission --> ApiService
     ApiService -->|HTTP/JSON| Main
 
-    Main --> Calculator
     Main --> Models
     Main --> Patterns
+    Main --> Simplifier
     Main --> KMZPackager
 
     KMZPackager --> WPMLBuilder
@@ -102,8 +106,9 @@ sequenceDiagram
     participant KMZ as KMZ Packager
 
     Note over U,KMZ: 1. INICIALIZACIÓN
-    H->>API: GET /api/cameras
-    API-->>H: Lista de drones soportados
+    H->>H: Carga CAMERA_PRESETS (local)
+    H->>API: GET /health
+    API-->>H: status: healthy
     H->>H: setBackendStatus('online')
 
     Note over U,KMZ: 2. DIBUJO DEL POLÍGONO
@@ -113,19 +118,16 @@ sequenceDiagram
     M->>H: onPolygonComplete(coords)
     M->>H: onAreaCalculated(area_m2)
 
-    Note over U,KMZ: 3. CÁLCULO AUTOMÁTICO DE PARÁMETROS
-    H->>API: POST /api/calculate
-    API->>Calc: calculate_flight_params()
-    Calc->>Calc: GSD → Altitud<br/>Footprint<br/>Espaciados
-    Calc-->>API: FlightParams
-    API-->>H: Parámetros calculados
-    H->>C: Actualiza UI
+    Note over U,KMZ: 3. CÁLCULO AUTOMÁTICO DE PARÁMETROS (LOCAL)
+    H->>H: calculateFlightParams() [cliente]
+    H->>H: GSD → Altitud<br/>Footprint<br/>Espaciados
+    H->>C: Actualiza UI con FlightParams
 
     Note over U,KMZ: 4. AJUSTE DE PARÁMETROS (OPCIONAL)
     U->>C: Modifica GSD/Overlap/Ángulo
     C->>H: updateConfig()
-    H->>API: POST /api/calculate
-    API-->>H: Nuevos parámetros
+    H->>H: calculateFlightParams() [cliente]
+    H->>C: Actualiza UI
 
     Note over U,KMZ: 5. GENERACIÓN DE MISIÓN
     U->>C: Click "Generar Misión"
@@ -155,18 +157,16 @@ sequenceDiagram
 
 ### API Endpoints
 
+> **Nota:** Los endpoints `/api/cameras` y `/api/calculate` fueron migrados al cliente. Los cálculos fotogramétricos ahora se ejecutan en el navegador usando `services/calculator.ts` y las especificaciones de cámara están en `CAMERA_PRESETS` (types/index.ts).
+
 ```mermaid
 flowchart LR
     subgraph Endpoints
-        E1["GET /api/cameras"]
-        E2["POST /api/calculate"]
         E3["POST /api/generate-waypoints"]
         E4["POST /api/generate-kmz"]
         E5["GET /health"]
     end
 
-    E1 -->|Lista drones| R1[CameraListResponse]
-    E2 -->|Solo cálculos| R2[FlightParams]
     E3 -->|Waypoints| R3[MissionResponse]
     E4 -->|Archivo| R4[Binary KMZ]
     E5 -->|Estado| R5["status: healthy"]
@@ -174,11 +174,17 @@ flowchart LR
 
 | Endpoint | Método | Descripción | Request | Response |
 |----------|--------|-------------|---------|----------|
-| `/api/cameras` | GET | Lista drones soportados | - | `CameraListResponse` |
-| `/api/calculate` | POST | Calcula parámetros sin waypoints | `CalculateRequest` | `FlightParams` |
 | `/api/generate-waypoints` | POST | Genera waypoints completos | `MissionRequest` | `MissionResponse` |
 | `/api/generate-kmz` | POST | Genera y descarga KMZ | `MissionRequest` | `Binary` |
 | `/health` | GET | Health check | - | `{"status": "healthy"}` |
+
+### Cálculos en Cliente (Sin Backend)
+
+| Funcionalidad | Ubicación | Descripción |
+|---------------|-----------|-------------|
+| Specs de cámara | `CAMERA_PRESETS` en types/index.ts | Constante con datos de sensores |
+| Cálculos fotogramétricos | `services/calculator.ts` | GSD, altitud, footprint, spacing |
+| Validación de config | `useMission.ts` | Validaciones de parámetros |
 
 ---
 
@@ -272,8 +278,8 @@ classDiagram
 
 | Drone | Sensor | Focal | Resolución | Enum DJI | Intervalo |
 |-------|--------|-------|------------|----------|-----------|
-| Mini 4 Pro | 9.59 × 7.19 mm | 6.72 mm | 8064 × 6048 px | 68/52 | 2s (12MP), 5s (48MP) |
-| Mini 5 Pro | 9.59 × 7.19 mm | 6.72 mm | 8064 × 6048 px | 91/80 | 2s (12MP), 5s (48MP) |
+| Mini 4 Pro | 9.59 × 7.19 mm (1/1.3") | 6.72 mm | 8064 × 6048 px (48MP) | 91/68 | 2s (12MP), 5s (48MP) |
+| Mini 5 Pro | 13.20 × 8.80 mm (1") | 8.82 mm | 8192 × 6144 px (50MP) | 100/80 | 2s (12MP), 5s (50MP) |
 
 ---
 
@@ -329,14 +335,27 @@ flowchart TD
 | **Line Spacing** | `footprint_width × (1 - side_overlap / 100)` |
 | **Max Speed** | `photo_spacing / photo_interval` |
 
-#### Ejemplo de Cálculo (GSD 2 cm/px, Mini 4 Pro)
+#### Ejemplo de Cálculo (GSD 1 cm/px, Mini 5 Pro)
 
 ```
-Altitud    = (2 × 6.72 × 8064) / (9.59 × 100) = 112.8 m
-Footprint  = (9.59/6.72) × 112.8 = 161.0 m ancho × 120.7 m alto
-Photo Spacing (75% overlap) = 120.7 × 0.25 = 30.2 m
-Line Spacing (65% overlap)  = 161.0 × 0.35 = 56.4 m
-Max Speed (12MP, 2s)        = 30.2 / 2 = 15.1 m/s
+Altitud    = (1 × 8.82 × 8192) / (13.20 × 100) = 54.7 m
+Footprint  = (13.20/8.82) × 54.7 = 81.9 m ancho
+             (8.80/8.82) × 54.7 = 54.6 m alto
+Photo Spacing (75% overlap) = 54.6 × 0.25 = 13.6 m
+Line Spacing (65% overlap)  = 81.9 × 0.35 = 28.7 m
+Max Speed (12MP, 2s)        = 13.6 / 2 = 6.8 m/s
+Max Speed (Timer 5s)        = 13.6 / 5 = 2.7 m/s
+```
+
+#### Ejemplo de Cálculo (GSD 1 cm/px, Mini 4 Pro)
+
+```
+Altitud    = (1 × 6.72 × 8064) / (9.59 × 100) = 56.5 m
+Footprint  = (9.59/6.72) × 56.5 = 80.6 m ancho
+             (7.19/6.72) × 56.5 = 60.4 m alto
+Photo Spacing (75% overlap) = 60.4 × 0.25 = 15.1 m
+Line Spacing (65% overlap)  = 80.6 × 0.35 = 28.2 m
+Max Speed (12MP, 2s)        = 15.1 / 2 = 7.6 m/s
 ```
 
 ---
@@ -800,27 +819,26 @@ flowchart TB
 flowchart LR
     subgraph Frontend
         HOOK[useMission]
+        CALC[calculator.ts]
         API[api.ts]
     end
 
     subgraph Backend
-        EP1["/api/cameras"]
-        EP2["/api/calculate"]
         EP3["/api/generate-waypoints"]
         EP4["/api/generate-kmz"]
     end
 
+    HOOK --> CALC
+    CALC -->|FlightParams| HOOK
     HOOK --> API
-    API -->|GET| EP1
-    API -->|POST| EP2
     API -->|POST| EP3
     API -->|POST| EP4
 
-    EP1 -->|JSON| API
-    EP2 -->|JSON| API
     EP3 -->|JSON| API
     EP4 -->|Blob| API
 ```
+
+> **Nota:** Las especificaciones de cámara (`CAMERA_PRESETS`) y los cálculos fotogramétricos (`calculateFlightParams`) se ejecutan localmente en el cliente, sin necesidad de llamadas al backend.
 
 ---
 
@@ -857,14 +875,30 @@ flowchart TD
 
 | Parámetro | Rango | Default | Descripción |
 |-----------|-------|---------|-------------|
-| **GSD** | 0.5 - 5.0 cm/px | 2.0 | Resolución del terreno |
+| **Drone** | mini_4_pro, mini_5_pro | mini_5_pro | Modelo de drone |
+| **GSD** | 0.5 - 5.0 cm/px | 1.0 | Resolución del terreno |
 | **Front Overlap** | 50 - 90% | 75% | Solapamiento entre fotos consecutivas |
 | **Side Overlap** | 50 - 90% | 65% | Solapamiento entre líneas |
 | **Flight Angle** | 0 - 359° | 0° | Dirección del patrón (N=0°) |
 | **48MP Mode** | on/off | off | Modo alta resolución (intervalo 5s) |
 | **Altitude Override** | 20 - 120 m | - | Altitud manual (recalcula GSD) |
-| **Speed Override** | 1 - 15 m/s | - | Velocidad manual (cap por intervalo) |
-| **Gimbal Pitch** | -90° a 0° | -90° | Ángulo de cámara (nadir a horizonte) |
+| **Gimbal Pitch** | -90° a 0° | -90° | Nadir (-90°) u Oblicua (-45°) |
+
+### Modo Timer (Simplificación de Waypoints)
+
+Para áreas grandes que exceden el límite de 99 waypoints:
+
+| Parámetro | Rango | Default | Descripción |
+|-----------|-------|---------|-------------|
+| **Photo Interval** | 2 - 10 s | 5.0 | Intervalo del timer en DJI Fly |
+| **Speed** | 1 - 15 m/s | 5.0 | Velocidad de vuelo |
+| **Angle Threshold** | 5 - 120° | 15° | Umbral para fusionar waypoints colineales |
+| **Max Time Between** | 10 - 120 s | 10 | Tiempo máximo entre waypoints intermedios |
+
+**Fórmulas del modo timer:**
+- Espaciado real = `velocidad × intervalo`
+- Overlap frontal real = `(1 - espaciado / footprint_height) × 100`
+- Velocidad óptima = `photo_spacing_deseado / intervalo`
 
 ---
 
@@ -989,10 +1023,12 @@ npm run dev                    # http://localhost:5173
 | Max waypoints | **99** | Límite DJI Fly |
 | GSD mínimo | 0.5 cm/px | Alta resolución |
 | GSD máximo | 5.0 cm/px | Baja resolución |
+| GSD default | 1.0 cm/px | Mini 5 Pro |
 | Overlaps | 50-90% | Rango válido |
 | Intervalo 12MP | 2.0 s | Fijo |
-| Intervalo 48MP | 5.0 s | Fijo |
+| Intervalo 48/50MP | 5.0 s | Fijo |
 | Altitud recomendada | ≤ 120 m | Regulaciones |
+| Gimbal presets | Nadir (-90°), Oblicua (-45°) | Presets rápidos |
 
 ---
 
