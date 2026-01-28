@@ -129,7 +129,6 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
         defaultCreateOptions: {
           hasZ: false,
         },
-        polygonSymbol: POLYGON_SYMBOL,
       });
       view.ui.add(sketch, 'top-right');
 
