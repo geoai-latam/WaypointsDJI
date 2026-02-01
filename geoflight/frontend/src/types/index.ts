@@ -128,6 +128,9 @@ export interface MissionRequest {
   finish_action: FinishAction;
   takeoff_altitude_m: number;
   simplify?: SimplificationOptions;
+  // Timer mode parameters
+  use_timer_mode?: boolean;
+  photo_interval_s?: number;
 }
 
 export interface MissionResponse {
