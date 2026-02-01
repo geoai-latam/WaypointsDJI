@@ -199,9 +199,14 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
   }, [processPolygon]);
 
   const waypointGraphics = useMemo(() => {
+    console.log('[MapView] waypointGraphics memo, waypoints:', waypoints.length);
     if (waypoints.length === 0) return { route: null, markers: [], labels: [] };
 
+    console.log('[MapView] First waypoint:', waypoints[0]);
+    console.log('[MapView] Last waypoint:', waypoints[waypoints.length - 1]);
+
     const routeCoords = waypoints.map((wp) => [wp.longitude, wp.latitude]);
+    console.log('[MapView] Route coords sample:', routeCoords.slice(0, 3));
     const route = new Graphic({
       geometry: new Polyline({ paths: [routeCoords], spatialReference: { wkid: 4326 } }),
       symbol: ROUTE_SYMBOL,
@@ -244,8 +249,12 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
   }, [waypoints]);
 
   useEffect(() => {
+    console.log('[MapView] useEffect for graphics, mapInstance:', !!mapInstanceRef.current);
     const instance = mapInstanceRef.current;
-    if (!instance) return;
+    if (!instance) {
+      console.warn('[MapView] No map instance yet');
+      return;
+    }
 
     const { route: routeLayer, waypoints: wpLayer, labels: labelsLayer } = instance.layers;
 
@@ -253,7 +262,11 @@ export function MapComponent({ onPolygonComplete, onAreaCalculated, waypoints }:
     wpLayer.removeAll();
     labelsLayer.removeAll();
 
+    console.log('[MapView] waypointGraphics.route:', !!waypointGraphics.route);
+    console.log('[MapView] waypointGraphics.markers:', waypointGraphics.markers.length);
+
     if (waypointGraphics.route) {
+      console.log('[MapView] Adding route and markers to map');
       routeLayer.add(waypointGraphics.route);
       wpLayer.addMany(waypointGraphics.markers);
       labelsLayer.addMany(waypointGraphics.labels);

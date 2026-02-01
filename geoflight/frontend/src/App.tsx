@@ -21,7 +21,6 @@ function App() {
     setAreaSqM,
     generateMission,
     downloadKmz,
-    backendStatus,
     validationErrors,
     simplificationStats,
   } = useMission();
@@ -71,7 +70,6 @@ function App() {
             onDownload={downloadKmz}
             hasPolygon={polygonCoords.length >= 3}
             areaSqM={areaSqM}
-            backendStatus={backendStatus}
             simplificationStats={simplificationStats}
           />
         </aside>

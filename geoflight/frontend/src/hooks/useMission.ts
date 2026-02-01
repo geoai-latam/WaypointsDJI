@@ -8,7 +8,7 @@ import type {
   SimplificationStats,
 } from '../types';
 import { DEFAULT_MISSION_CONFIG } from '../types';
-import * as api from '../services/api';
+import { getWorkerClient, triggerDownload } from '../services/workerClient';
 import { calculateFlightParams } from '../services/calculator';
 
 interface UseMissionReturn {
@@ -26,7 +26,6 @@ interface UseMissionReturn {
   setAreaSqM: (area: number) => void;
   generateMission: () => Promise<void>;
   downloadKmz: () => Promise<void>;
-  backendStatus: 'checking' | 'online' | 'offline';
   validationErrors: string[];
   simplificationStats: SimplificationStats | null;
 }
@@ -40,36 +39,8 @@ export function useMission(): UseMissionReturn {
   const [error, setError] = useState<string | null>(null);
   const [polygonCoords, setPolygonCoords] = useState<Coordinate[]>([]);
   const [areaSqM, setAreaSqM] = useState(0);
-  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [simplificationStats, setSimplificationStats] = useState<SimplificationStats | null>(null);
-
-  // Check backend connectivity on mount (needed for waypoint generation)
-  useEffect(() => {
-    const checkBackend = async () => {
-      try {
-        const response = await fetch('/health');
-        if (response.ok) {
-          setBackendStatus('online');
-        } else {
-          setBackendStatus('offline');
-        }
-      } catch {
-        setBackendStatus('offline');
-      }
-    };
-
-    checkBackend();
-
-    // Retry every 10 seconds if offline
-    const interval = setInterval(() => {
-      if (backendStatus === 'offline') {
-        checkBackend();
-      }
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [backendStatus]);
 
   // Validate configuration
   useEffect(() => {
@@ -148,12 +119,6 @@ export function useMission(): UseMissionReturn {
   }, []);
 
   const generateMission = useCallback(async () => {
-    // Validations
-    if (backendStatus !== 'online') {
-      setError('El servidor no está disponible. Verifica que el backend esté corriendo en http://localhost:8000');
-      return;
-    }
-
     if (polygonCoords.length < 3) {
       setError('Dibuja un polígono en el mapa primero (mínimo 3 puntos)');
       return;
@@ -184,6 +149,9 @@ export function useMission(): UseMissionReturn {
         gimbal_pitch_deg: config.gimbalPitchDeg,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
+        // Timer mode parameters
+        use_timer_mode: config.useTimerMode,
+        photo_interval_s: config.useTimerMode ? config.photoIntervalS : undefined,
         simplify: config.useSimplify ? {
           enabled: true,
           angle_threshold_deg: config.simplifyAngleThreshold,
@@ -191,34 +159,41 @@ export function useMission(): UseMissionReturn {
         } : undefined,
       };
 
-      const response = await api.generateWaypoints(request);
+      const workerClient = getWorkerClient();
+      const response = await workerClient.generateWaypoints(request);
+
+      console.log('[useMission] Worker response:', response);
+      console.log('[useMission] Waypoints received:', response.waypoints?.length || 0);
 
       if (response.success && response.waypoints) {
+        console.log('[useMission] Setting waypoints:', response.waypoints.length);
+        if (response.waypoints.length > 0) {
+          console.log('[useMission] First wp:', response.waypoints[0]);
+        }
         setWaypoints(response.waypoints);
         if (response.flight_params) {
-          // Merge backend params with timer mode calculations
-          const backendParams = response.flight_params;
+          // Merge worker params with timer mode calculations
+          const workerParams = response.flight_params;
 
           if (config.useTimerMode) {
             const interval = config.photoIntervalS;
             const speed = config.speedMs;
             const actualPhotoSpacing = speed * interval;
-            const actualFrontOverlap = Math.round((1 - actualPhotoSpacing / backendParams.footprint_height_m) * 100);
+            const actualFrontOverlap = Math.round((1 - actualPhotoSpacing / workerParams.footprint_height_m) * 100);
 
             // Recalculate optimal speed for desired overlap with custom interval
-            // Formula: optimal_speed = photo_spacing_for_desired_overlap / interval
-            const optimalSpeed = backendParams.photo_spacing_m / interval;
+            const optimalSpeed = workerParams.photo_spacing_m / interval;
 
             setFlightParams({
-              ...backendParams,
+              ...workerParams,
               photo_interval_s: interval,
-              max_speed_ms: Math.round(optimalSpeed * 100) / 100, // Optimal speed for custom interval
+              max_speed_ms: Math.round(optimalSpeed * 100) / 100,
               actual_speed_ms: speed,
               actual_photo_spacing_m: actualPhotoSpacing,
               actual_front_overlap_pct: Math.max(0, Math.min(99, actualFrontOverlap)),
             });
           } else {
-            setFlightParams(backendParams);
+            setFlightParams(workerParams);
           }
         }
         if (response.simplification_stats) {
@@ -241,20 +216,14 @@ export function useMission(): UseMissionReturn {
         setError(response.message || 'Error al generar la misión');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error de conexión con el servidor';
+      const message = err instanceof Error ? err.message : 'Error al generar la misión';
       setError(`Error: ${message}`);
     } finally {
       setIsLoading(false);
     }
-  }, [polygonCoords, config, areaSqM, backendStatus]);
+  }, [polygonCoords, config, areaSqM]);
 
   const downloadKmz = useCallback(async () => {
-    // Validations
-    if (backendStatus !== 'online') {
-      setError('El servidor no está disponible');
-      return;
-    }
-
     if (polygonCoords.length < 3) {
       setError('Dibuja un polígono en el mapa primero');
       return;
@@ -283,6 +252,9 @@ export function useMission(): UseMissionReturn {
         gimbal_pitch_deg: config.gimbalPitchDeg,
         finish_action: config.finishAction,
         takeoff_altitude_m: 30,
+        // Timer mode parameters
+        use_timer_mode: config.useTimerMode,
+        photo_interval_s: config.useTimerMode ? config.photoIntervalS : undefined,
         simplify: config.useSimplify ? {
           enabled: true,
           angle_threshold_deg: config.simplifyAngleThreshold,
@@ -290,16 +262,17 @@ export function useMission(): UseMissionReturn {
         } : undefined,
       };
 
-      const blob = await api.downloadKmz(request);
+      const workerClient = getWorkerClient();
+      const blob = await workerClient.generateKmz(request);
       const filename = `mission_${config.pattern}_${waypoints.length}wp_${new Date().toISOString().slice(0, 10)}.kmz`;
-      api.triggerDownload(blob, filename);
+      triggerDownload(blob, filename);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error al descargar';
       setError(`Error: ${message}`);
     } finally {
       setIsLoading(false);
     }
-  }, [polygonCoords, config, waypoints, backendStatus]);
+  }, [polygonCoords, config, waypoints]);
 
   return {
     config,
@@ -316,7 +289,6 @@ export function useMission(): UseMissionReturn {
     setAreaSqM,
     generateMission,
     downloadKmz,
-    backendStatus,
     validationErrors,
     simplificationStats,
   };

@@ -14,7 +14,6 @@ interface ConfigPanelProps {
   onDownload: () => void;
   hasPolygon: boolean;
   areaSqM: number;
-  backendStatus: 'checking' | 'online' | 'offline';
   simplificationStats: SimplificationStats | null;
 }
 
@@ -88,13 +87,12 @@ export function ConfigPanel({
   onDownload,
   hasPolygon,
   areaSqM,
-  backendStatus,
   simplificationStats,
 }: ConfigPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const waypointCount = waypoints.length;
-  const canGenerate = hasPolygon && backendStatus === 'online' && !isLoading;
+  const canGenerate = hasPolygon && !isLoading;
   const canDownload = canGenerate && waypointCount > 0;
 
   const effectiveAltitude = config.useAltitudeOverride && config.altitudeOverrideM
